@@ -53,6 +53,12 @@ import java.nio.ByteOrder
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
+import android.content.ComponentName
+import android.content.ServiceConnection
+import android.os.IBinder
+import android.widget.Toast
+import rikka.shizuku.Shizuku
+
 
 class MainActivity : ComponentActivity() {
 
@@ -61,12 +67,28 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             KeyStrokesTheme {
-                KeystrokesTestScreen()
+
+                var showSetupScreen by remember {
+                    mutableStateOf(true)
+                }
+
+                if (showSetupScreen) {
+
+                    SetupScreen(
+                        onEnter = {
+                            showSetupScreen = false
+                        }
+                    )
+
+                } else {
+
+                    KeystrokesTestScreen()
+
+                }
             }
         }
     }
 }
-
 
 /*
  * ============================================================
@@ -583,7 +605,7 @@ private fun MainPage(
                     Text(
 
                         text =
-                            "Sth. Keystrokes V1.1",
+                            "Keystrokes V1.2",
 
                         style =
                             MaterialTheme
@@ -1400,7 +1422,7 @@ private fun AboutPage(
             Text(
 
                 text =
-                    "V1.1",
+                    "V1.2",
 
                 style =
                     MaterialTheme
@@ -1419,7 +1441,7 @@ private fun AboutPage(
             Text(
 
                 text =
-                    "在 Android 系统中使用的\n" +
+                    "一个Android\n" +
                             "按键显示UI",
 
                 style =
