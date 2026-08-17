@@ -583,7 +583,7 @@ private fun MainPage(
                     Text(
 
                         text =
-                            "Keystrokes V0.3",
+                            "Sth. Keystrokes V1.1",
 
                         style =
                             MaterialTheme
@@ -1387,7 +1387,7 @@ private fun AboutPage(
             Text(
 
                 text =
-                    "Android-KeyStrokes-by-Root",
+                    "Sth-Android-KeyStrokes",
 
                 style =
                     MaterialTheme
@@ -1400,7 +1400,7 @@ private fun AboutPage(
             Text(
 
                 text =
-                    "V1.0",
+                    "V1.1",
 
                 style =
                     MaterialTheme
@@ -1419,7 +1419,7 @@ private fun AboutPage(
             Text(
 
                 text =
-                    "一个基于 Root 的 Android\n" +
+                    "在 Android 系统中使用的\n" +
                             "按键显示UI",
 
                 style =
@@ -1447,7 +1447,7 @@ private fun AboutPage(
                     val intent = Intent(
                         Intent.ACTION_VIEW,
                         android.net.Uri.parse(
-                            "https://github.com/something-sth/Android-KeyStrokes-by-Root"
+                            "https://github.com/something-sth/Sth-Android-KeyStrokes"
                         )
                     )
 
@@ -1478,7 +1478,7 @@ private fun AboutPage(
                     val intent = Intent(
                         Intent.ACTION_VIEW,
                         android.net.Uri.parse(
-                            "https://github.com/something-sth/Android-KeyStrokes-by-Root/blob/main/LICENSE"
+                            "https://github.com/something-sth/Sth-Android-KeyStrokes/blob/main/LICENSE"
                         )
                     )
 
