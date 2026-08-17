@@ -1,14 +1,14 @@
 package com.something.keystrokes
 
-import android.content.ComponentName
 import android.content.Intent
-import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.IBinder
+import android.os.Bundle
 import android.provider.Settings
-import android.util.Log
 import android.widget.Toast
+
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,21 +40,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
-import com.something.keystrokes.input.ShizukuInputTestService
+import rikka.shizuku.Shizuku
 
 import java.io.BufferedReader
 import java.io.InputStreamReader
 
-import rikka.shizuku.Shizuku
-
-
-/*
- * =============================================================
- * Shizuku 测试
- * =============================================================
- */
-
-private const val TAG_SHIZUKU = "ShizukuInputTest"
 
 private const val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
 
@@ -88,294 +78,34 @@ fun SetupScreen(
     }
 
 
-    /*
-     * =========================================================
-     * Shizuku 状态
-     * =========================================================
-     */
-
     var shizukuStatus by remember {
-
         mutableStateOf(
             getShizukuStatus()
         )
-
     }
-
-
-    /*
-     * 当前 Shizuku User Service
-     */
-
-    var shizukuInputTestService by remember {
-
-        mutableStateOf<IShizukuInputTest?>(null)
-
-    }
-
-
-    /*
-     * =========================================================
-     * Shizuku User Service 参数
-     * =========================================================
-     */
-
-    val shizukuUserServiceArgs = remember {
-
-        Shizuku.UserServiceArgs(
-            ComponentName(
-                context,
-                ShizukuInputTestService::class.java
-            )
-        )
-            .daemon(false)
-            .processNameSuffix("input_test")
-            .debuggable(BuildConfig.DEBUG)
-            .version(BuildConfig.VERSION_CODE)
-
-    }
-
-
-    /*
-     * =========================================================
-     * Shizuku User Service 连接
-     * =========================================================
-     */
-
-    val shizukuServiceConnection =
-        remember(context) {
-
-            object : ServiceConnection {
-
-                override fun onServiceConnected(
-                    name: ComponentName?,
-                    service: IBinder?
-                ) {
-
-                    Log.i(
-                        TAG_SHIZUKU,
-                        "User Service 已连接"
-                    )
-
-
-                    if (
-                        service == null ||
-                        !service.pingBinder()
-                    ) {
-
-                        Log.e(
-                            TAG_SHIZUKU,
-                            "User Service Binder 无效"
-                        )
-
-                        shizukuStatus =
-                            "连接失败"
-
-                        Toast.makeText(
-                            context,
-                            "Shizuku User Service 连接失败",
-                            Toast.LENGTH_SHORT
-                        ).show()
-
-                        return
-
-                    }
-
-
-                    shizukuInputTestService =
-                        IShizukuInputTest.Stub
-                            .asInterface(service)
-
-
-                    try {
-
-                        val uid =
-                            shizukuInputTestService
-                                ?.getUid()
-                                ?: -1
-
-
-                        Log.i(
-                            TAG_SHIZUKU,
-                            "User Service UID = $uid"
-                        )
-
-
-                        if (uid == 2000) {
-
-                            shizukuStatus =
-                                "已连接 UID 2000"
-
-                        } else {
-
-                            shizukuStatus =
-                                "UID $uid"
-
-                        }
-
-
-                        val result =
-                            shizukuInputTestService
-                                ?.startInputTest()
-                                ?: -1
-
-
-                        Log.i(
-                            TAG_SHIZUKU,
-                            "startInputTest result = $result"
-                        )
-
-
-                        when (result) {
-
-                            0 -> {
-
-                                shizukuStatus =
-                                    "测试运行中"
-
-                                Toast.makeText(
-                                    context,
-                                    "程序已废弃",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-
-                            }
-
-                            1 -> {
-
-                                shizukuStatus =
-                                    "测试已运行"
-
-                                Toast.makeText(
-                                    context,
-                                    "输入测试已经在运行",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-
-                            }
-
-                            2 -> {
-
-                                shizukuStatus =
-                                    "UID 错误"
-
-                                Toast.makeText(
-                                    context,
-                                    "Shizuku User Service UID 不是 2000",
-                                    Toast.LENGTH_LONG
-                                ).show()
-
-                            }
-
-                            3 -> {
-
-                                shizukuStatus =
-                                    "未找到 event"
-
-                                Toast.makeText(
-                                    context,
-                                    "没有找到 /dev/input/event*",
-                                    Toast.LENGTH_LONG
-                                ).show()
-
-                            }
-
-                            4 -> {
-
-                                shizukuStatus =
-                                    "无法读取 event"
-
-                                Toast.makeText(
-                                    context,
-                                    "找到 event，但无法打开",
-                                    Toast.LENGTH_LONG
-                                ).show()
-
-                            }
-
-                            else -> {
-
-                                shizukuStatus =
-                                    "测试失败"
-
-                                Toast.makeText(
-                                    context,
-                                    "Shizuku 输入测试失败：$result",
-                                    Toast.LENGTH_LONG
-                                ).show()
-
-                            }
-
-                        }
-
-                    } catch (e: Exception) {
-
-                        Log.e(
-                            TAG_SHIZUKU,
-                            "启动输入测试失败",
-                            e
-                        )
-
-                        shizukuStatus =
-                            "测试失败"
-
-                        Toast.makeText(
-                            context,
-                            "Shizuku 输入测试启动失败",
-                            Toast.LENGTH_LONG
-                        ).show()
-
-                    }
-
-                }
-
-
-                override fun onServiceDisconnected(
-                    name: ComponentName?
-                ) {
-
-                    Log.i(
-                        TAG_SHIZUKU,
-                        "User Service 已断开"
-                    )
-
-                    shizukuInputTestService =
-                        null
-
-                    shizukuStatus =
-                        getShizukuStatus()
-
-                }
-
-            }
-
-        }
 
 
     /*
      * =========================================================
      * Shizuku 权限回调
+     *
+     * 这里只处理“是否授权”
+     * 不再启动 User Service
      * =========================================================
      */
 
-    DisposableEffect(
-        lifecycleOwner,
-        shizukuServiceConnection
-    ) {
+    DisposableEffect(lifecycleOwner) {
 
         val permissionListener =
             Shizuku.OnRequestPermissionResultListener {
                     requestCode,
                     grantResult ->
 
-
                 if (
                     requestCode !=
                     SHIZUKU_PERMISSION_REQUEST_CODE
                 ) {
-
                     return@OnRequestPermissionResultListener
-
                 }
 
 
@@ -384,14 +114,7 @@ fun SetupScreen(
                     PackageManager.PERMISSION_GRANTED
                 ) {
 
-                    Log.i(
-                        TAG_SHIZUKU,
-                        "Shizuku 权限授权成功"
-                    )
-
-                    shizukuStatus =
-                        "已授权"
-
+                    shizukuStatus = "已授权"
 
                     Toast.makeText(
                         context,
@@ -399,36 +122,16 @@ fun SetupScreen(
                         Toast.LENGTH_SHORT
                     ).show()
 
-
-                    bindShizukuService(
-                        context = context,
-                        args = shizukuUserServiceArgs,
-                        connection = shizukuServiceConnection,
-                        onError = {
-                            shizukuStatus =
-                                "连接失败"
-                        }
-                    )
-
                 } else {
 
-                    Log.w(
-                        TAG_SHIZUKU,
-                        "Shizuku 权限被拒绝"
-                    )
-
-                    shizukuStatus =
-                        "未授权"
-
+                    shizukuStatus = "未授权"
 
                     Toast.makeText(
                         context,
                         "Shizuku 权限未授权",
                         Toast.LENGTH_SHORT
                     ).show()
-
                 }
-
             }
 
 
@@ -436,6 +139,12 @@ fun SetupScreen(
             permissionListener
         )
 
+
+        /*
+         * =====================================================
+         * 返回 SetupScreen 时重新检查所有权限
+         * =====================================================
+         */
 
         val observer =
             LifecycleEventObserver { _, event ->
@@ -448,16 +157,12 @@ fun SetupScreen(
                     overlayGranted =
                         Settings.canDrawOverlays(context)
 
-
                     rootStatus =
                         checkRootAccess()
 
-
                     shizukuStatus =
                         getShizukuStatus()
-
                 }
-
             }
 
 
@@ -472,48 +177,10 @@ fun SetupScreen(
                 observer
             )
 
-
             Shizuku.removeRequestPermissionResultListener(
                 permissionListener
             )
-
-
-            try {
-
-                shizukuInputTestService
-                    ?.stopInputTest()
-
-            } catch (e: Exception) {
-
-                Log.w(
-                    TAG_SHIZUKU,
-                    "停止输入测试失败",
-                    e
-                )
-
-            }
-
-
-            try {
-
-                Shizuku.unbindUserService(
-                    shizukuUserServiceArgs,
-                    shizukuServiceConnection,
-                    true
-                )
-
-            } catch (e: Exception) {
-
-                Log.w(
-                    TAG_SHIZUKU,
-                    "解除 User Service 失败",
-                    e
-                )
-
-            }
-
         }
-
     }
 
 
@@ -521,17 +188,29 @@ fun SetupScreen(
      * =========================================================
      * 是否允许进入软件
      *
-     * 当前版本仍然：
+     * 三种情况：
      *
-     * 悬浮窗 + Root
+     * 1. Root + 悬浮窗
+     * 2. Shizuku + 悬浮窗
      *
-     * Shizuku 现在只是实验功能。
+     * 任意一种满足即可进入。
      * =========================================================
      */
 
+    val rootAvailable =
+        rootStatus == "已授权"
+
+
+    val shizukuAvailable =
+        shizukuStatus == "已授权"
+
+
     val canEnter =
         overlayGranted &&
-                rootStatus == "已授权"
+                (
+                        rootAvailable ||
+                                shizukuAvailable
+                        )
 
 
     /*
@@ -553,24 +232,33 @@ fun SetupScreen(
 
         Text(
             text = "KeyStrokes",
-            style = MaterialTheme.typography.headlineLarge
+            style =
+                MaterialTheme
+                    .typography
+                    .headlineLarge
         )
 
 
         Text(
-            text = "请先完成授权，否则软件无法正常工作",
-            style = MaterialTheme.typography.bodyLarge
+            text =
+                "请先完成授权，否则软件无法正常工作",
+
+            style =
+                MaterialTheme
+                    .typography
+                    .bodyLarge
         )
 
 
         Spacer(
-            modifier = Modifier.height(8.dp)
+            modifier =
+                Modifier.height(8.dp)
         )
 
 
         /*
          * =====================================================
-         * 悬浮窗
+         * 悬浮窗权限
          * =====================================================
          */
 
@@ -615,16 +303,14 @@ fun SetupScreen(
                     context.startActivity(
                         intent
                     )
-
                 }
-
             }
         )
 
 
         /*
          * =====================================================
-         * Root
+         * Root 权限
          * =====================================================
          */
 
@@ -651,120 +337,64 @@ fun SetupScreen(
                 rootStatus =
                     checkRootAccess()
 
+                if (rootStatus != "已授权") {
+
+                    Toast.makeText(
+                        context,
+                        "请在 Root 管理器中授予 KeyStrokes Root 权限",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         )
 
 
         /*
          * =====================================================
-         * Shizuku
+         * Shizuku 权限
+         *
+         * 这里只负责授权。
+         *
+         * 不启动 User Service。
+         * 不读取输入设备。
+         * 不扫描 event。
          * =====================================================
          */
 
-        Card(
-            modifier =
-                Modifier.fillMaxWidth()
-        ) {
+        PermissionCard(
+            title = "Shizuku",
 
-            Column(
-                modifier =
-                    Modifier.padding(16.dp),
+            description =
+                "使用 Shizuku 作为 Root 的替代授权方式",
 
-                verticalArrangement =
-                    Arrangement.spacedBy(8.dp)
-            ) {
+            status =
+                shizukuStatus,
 
+            required = true,
 
-                Text(
-                    text = "Shizuku",
+            buttonText =
+                when (shizukuStatus) {
 
-                    style =
-                        MaterialTheme
-                            .typography
-                            .titleMedium
-                )
+                    "已授权" ->
+                        "已授权"
 
+                    "未运行" ->
+                        "请先启动 Shizuku"
 
-                Text(
-                    text =
-                        "免 Root 输入读取测试",
+                    else ->
+                        "授权 Shizuku"
+                },
 
-                    style =
-                        MaterialTheme
-                            .typography
-                            .bodyMedium
-                )
+            onClick = {
 
-
-                Text(
-                    text =
-                        "状态：$shizukuStatus",
-
-                    style =
-                        MaterialTheme
-                            .typography
-                            .bodyMedium
-                )
-
-
-                Row(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    horizontalArrangement =
-                        Arrangement.spacedBy(8.dp)
-                ) {
-
-                    Button(
-                        onClick = {
-
-                            startShizukuInputTest(
-                                context = context,
-
-                                args =
-                                    shizukuUserServiceArgs,
-
-                                connection =
-                                    shizukuServiceConnection,
-
-                                onStatusChange = {
-                                    shizukuStatus =
-                                        it
-                                }
-
-                            )
-
-                        },
-
-                        modifier =
-                            Modifier.fillMaxWidth()
-                    ) {
-
-                        Text(
-                            text =
-                                when {
-
-                                    shizukuStatus ==
-                                            "测试运行中" ->
-                                        "测试运行中"
-
-                                    shizukuStatus ==
-                                            "已连接 UID 2000" ->
-                                        "重新测试"
-
-                                    else ->
-                                        "开始 Shizuku 测试"
-
-                                }
-                        )
-
+                requestShizukuPermission(
+                    context = context,
+                    onStatusChange = {
+                        shizukuStatus = it
                     }
-
-                }
-
+                )
             }
-
-        }
+        )
 
 
         Spacer(
@@ -780,11 +410,9 @@ fun SetupScreen(
          */
 
         Button(
-            onClick =
-                onEnter,
+            onClick = onEnter,
 
-            enabled =
-                canEnter,
+            enabled = canEnter,
 
             modifier =
                 Modifier
@@ -793,44 +421,39 @@ fun SetupScreen(
         ) {
 
             Text(
-                text = "进入软件"
+                text =
+                    if (canEnter) {
+                        "进入软件"
+                    } else {
+                        "请完成授权"
+                    }
             )
-
         }
-
     }
-
 }
 
 
 /*
  * =============================================================
- * 启动 Shizuku 输入测试
+ * 请求 Shizuku 权限
  * =============================================================
  */
 
-private fun startShizukuInputTest(
+private fun requestShizukuPermission(
     context: android.content.Context,
-    args: Shizuku.UserServiceArgs,
-    connection: ServiceConnection,
     onStatusChange: (String) -> Unit
 ) {
 
     /*
      * ---------------------------------------------------------
-     * 1. Shizuku 是否运行
+     * Shizuku 是否运行
      * ---------------------------------------------------------
      */
 
     if (!Shizuku.pingBinder()) {
 
-        Log.e(
-            TAG_SHIZUKU,
-            "Shizuku Binder 不可用"
-        )
-
         onStatusChange(
-            "Shizuku 未运行"
+            "未运行"
         )
 
         Toast.makeText(
@@ -840,144 +463,69 @@ private fun startShizukuInputTest(
         ).show()
 
         return
-
     }
 
 
     /*
      * ---------------------------------------------------------
-     * 2. 检查权限
+     * 检查当前权限
      * ---------------------------------------------------------
      */
 
-    val permission =
-        Shizuku.checkSelfPermission()
-
-
     if (
-        permission !=
+        Shizuku.checkSelfPermission() ==
         PackageManager.PERMISSION_GRANTED
     ) {
 
-        Log.i(
-            TAG_SHIZUKU,
-            "尚未获得 Shizuku 权限，请求授权"
-        )
-
         onStatusChange(
-            "等待授权"
+            "已授权"
         )
 
-
-        try {
-
-            Shizuku.requestPermission(
-                SHIZUKU_PERMISSION_REQUEST_CODE
-            )
-
-        } catch (e: Exception) {
-
-            Log.e(
-                TAG_SHIZUKU,
-                "请求 Shizuku 权限失败",
-                e
-            )
-
-            onStatusChange(
-                "授权失败"
-            )
-
-        }
+        Toast.makeText(
+            context,
+            "Shizuku 已授权",
+            Toast.LENGTH_SHORT
+        ).show()
 
         return
-
     }
 
 
     /*
      * ---------------------------------------------------------
-     * 3. 已经有权限
+     * 请求 Shizuku 授权
      * ---------------------------------------------------------
      */
 
-    Log.i(
-        TAG_SHIZUKU,
-        "Shizuku 权限已获得"
-    )
-
-
     onStatusChange(
-        "正在连接"
+        "等待授权"
     )
 
-
-    bindShizukuService(
-        context = context,
-        args = args,
-        connection = connection,
-        onError = {
-            onStatusChange(
-                "连接失败"
-            )
-        }
-    )
-
-}
-
-
-/*
- * =============================================================
- * 绑定 Shizuku User Service
- * =============================================================
- */
-
-private fun bindShizukuService(
-    context: android.content.Context,
-    args: Shizuku.UserServiceArgs,
-    connection: ServiceConnection,
-    onError: () -> Unit
-) {
 
     try {
 
-        Log.i(
-            TAG_SHIZUKU,
-            "开始绑定 Shizuku User Service"
+        Shizuku.requestPermission(
+            SHIZUKU_PERMISSION_REQUEST_CODE
         )
-
-
-        Shizuku.bindUserService(
-            args,
-            connection
-        )
-
 
     } catch (e: Exception) {
 
-        Log.e(
-            TAG_SHIZUKU,
-            "bindUserService 失败",
-            e
+        onStatusChange(
+            "未授权"
         )
-
 
         Toast.makeText(
             context,
-            "Shizuku User Service 启动失败",
-            Toast.LENGTH_LONG
+            "请求 Shizuku 权限失败",
+            Toast.LENGTH_SHORT
         ).show()
-
-
-        onError()
-
     }
-
 }
 
 
 /*
  * =============================================================
- * Shizuku 当前状态
+ * 获取 Shizuku 当前状态
  * =============================================================
  */
 
@@ -985,34 +533,37 @@ private fun getShizukuStatus(): String {
 
     return try {
 
+        /*
+         * Shizuku 没有运行
+         */
+
         if (!Shizuku.pingBinder()) {
 
             "未运行"
 
         } else {
 
-            when (
-                Shizuku.checkSelfPermission()
+            /*
+             * Shizuku 正在运行
+             */
+
+            if (
+                Shizuku.checkSelfPermission() ==
+                PackageManager.PERMISSION_GRANTED
             ) {
 
-                PackageManager.PERMISSION_GRANTED ->
-                    "已授权"
+                "已授权"
 
-                else ->
-                    "未授权"
+            } else {
 
+                "未授权"
             }
-
         }
 
-    } catch (
-        _: Exception
-    ) {
+    } catch (e: Exception) {
 
         "未授权"
-
     }
-
 }
 
 
@@ -1025,11 +576,11 @@ private fun getShizukuStatus(): String {
  *
  *     su -c id
  *
- * 正常 Root 环境下通常会返回：
+ * 正常 Root 环境下：
  *
- *     uid=0(root) gid=0(root) ...
+ *     uid=0(root)
  *
- * 只有确认 UID = 0 才认为 Root 已授权。
+ * 只有明确检测到 UID 0 才认为 Root 已授权。
  *
  * =============================================================
  */
@@ -1058,14 +609,17 @@ private fun checkRootAccess(): String {
             }
 
 
-        val error =
-            BufferedReader(
-                InputStreamReader(
-                    process.errorStream
-                )
-            ).use {
-                it.readText()
-            }
+        /*
+         * 错误输出读取掉，避免进程异常阻塞。
+         */
+
+        BufferedReader(
+            InputStreamReader(
+                process.errorStream
+            )
+        ).use {
+            it.readText()
+        }
 
 
         val exitCode =
@@ -1076,13 +630,14 @@ private fun checkRootAccess(): String {
          * 必须同时满足：
          *
          * 1. su 执行成功
-         * 2. 输出中明确存在 uid=0
+         * 2. uid = 0
          */
 
         if (
             exitCode == 0 &&
-            Regex("""uid=0(?:\(|\s|$)""")
-                .containsMatchIn(output)
+            Regex(
+                """uid=0(?:\(|\s|$)"""
+            ).containsMatchIn(output)
         ) {
 
             "已授权"
@@ -1090,17 +645,12 @@ private fun checkRootAccess(): String {
         } else {
 
             "未授权"
-
         }
 
-    } catch (
-        _: Exception
-    ) {
+    } catch (e: Exception) {
 
         "未授权"
-
     }
-
 }
 
 
@@ -1165,7 +715,6 @@ private fun PermissionCard(
                             .typography
                             .bodySmall
                 )
-
             }
 
 
@@ -1190,8 +739,7 @@ private fun PermissionCard(
 
 
             Button(
-                onClick =
-                    onClick,
+                onClick = onClick,
 
                 enabled =
                     status != "已授权",
@@ -1203,11 +751,7 @@ private fun PermissionCard(
                 Text(
                     text = buttonText
                 )
-
             }
-
         }
-
     }
-
 }

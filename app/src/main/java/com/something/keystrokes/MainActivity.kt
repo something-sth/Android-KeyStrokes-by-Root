@@ -1,6 +1,7 @@
 package com.something.keystrokes
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 
 import androidx.activity.ComponentActivity
@@ -14,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -36,6 +39,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+
 import com.something.keystrokes.input.InputDeviceScanner
 import com.something.keystrokes.input.KeyStateManager
 import com.something.keystrokes.input.LinuxInputEvent
@@ -53,10 +60,6 @@ import java.nio.ByteOrder
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
-import android.content.ComponentName
-import android.content.ServiceConnection
-import android.os.IBinder
-import android.widget.Toast
 import rikka.shizuku.Shizuku
 
 
@@ -87,6 +90,90 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+}
+
+/*
+ * ============================================================
+ * 模式枚举
+ * ============================================================
+ */
+
+private enum class InputMode {
+    ROOT,
+    SHIZUKU
+}
+
+/*
+ * ============================================================
+ * Root 权限检测
+ * ============================================================
+ */
+
+private fun checkRootAuthorized(): Boolean {
+
+    return try {
+
+        val process =
+            Runtime.getRuntime().exec(
+                arrayOf(
+                    "su",
+                    "-c",
+                    "id"
+                )
+            )
+
+        val output =
+            process.inputStream
+                .bufferedReader()
+                .use {
+                    it.readText()
+                }
+
+        process.errorStream
+            .bufferedReader()
+            .use {
+                it.readText()
+            }
+
+        val exitCode =
+            process.waitFor()
+
+        exitCode == 0 &&
+                Regex(
+                    """uid=0(?:\(|\s|$)"""
+                ).containsMatchIn(output)
+
+    } catch (
+        _: Exception
+    ) {
+
+        false
+
+    }
+}
+
+
+/*
+ * ============================================================
+ * Shizuku 权限检测
+ * ============================================================
+ */
+
+private fun checkShizukuAuthorized(): Boolean {
+
+    return try {
+
+        Shizuku.pingBinder() &&
+                Shizuku.checkSelfPermission() ==
+                PackageManager.PERMISSION_GRANTED
+
+    } catch (
+        _: Exception
+    ) {
+
+        false
+
     }
 }
 
@@ -235,7 +322,6 @@ private fun KeystrokesTestScreen() {
             status = "已经正在监听"
 
             return
-
         }
 
 
@@ -605,7 +691,7 @@ private fun MainPage(
                     Text(
 
                         text =
-                            "Keystrokes V1.2",
+                            "Keystrokes V1.4",
 
                         style =
                             MaterialTheme
@@ -655,6 +741,183 @@ private fun MainPage(
 
                         Text(
                             "关于"
+                        )
+
+                    }
+
+                }
+
+            }
+
+
+            /*
+             * =================================================
+             * 模式切换 - Root / Shizuku
+             * =================================================
+             */
+
+            var selectedMode by remember {
+                mutableStateOf(InputMode.ROOT)
+            }
+
+            var rootAuthorized by remember {
+                mutableStateOf(
+                    checkRootAuthorized()
+                )
+            }
+
+            var shizukuAuthorized by remember {
+                mutableStateOf(
+                    checkShizukuAuthorized()
+                )
+            }
+
+            /*
+             * ============================================================
+             * 生命周期
+             *
+             * 回到主页时重新检查授权状态
+             * ============================================================
+             */
+
+            val lifecycleOwner =
+                LocalLifecycleOwner.current
+
+            DisposableEffect(lifecycleOwner) {
+
+                val observer =
+                    LifecycleEventObserver { _, event ->
+
+                        if (
+                            event ==
+                            Lifecycle.Event.ON_RESUME
+                        ) {
+
+                            rootAuthorized =
+                                checkRootAuthorized()
+
+                            shizukuAuthorized =
+                                checkShizukuAuthorized()
+
+                        }
+
+                    }
+
+                lifecycleOwner.lifecycle.addObserver(
+                    observer
+                )
+
+                onDispose {
+
+                    lifecycleOwner.lifecycle.removeObserver(
+                        observer
+                    )
+
+                }
+
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+
+                    Button(
+                        onClick = {
+                            selectedMode = InputMode.ROOT
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        Text("Root 模式")
+                    }
+
+                    Spacer(
+                        modifier = Modifier.width(8.dp)
+                    )
+
+                    Button(
+                        onClick = {
+                            selectedMode = InputMode.SHIZUKU
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        Text("Shizuku 模式")
+                    }
+                }
+
+                Spacer(
+                    modifier = Modifier.height(6.dp)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+
+                    /*
+                     * Root
+                     */
+
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+
+                        Text(
+                            text = if (selectedMode == InputMode.ROOT) {
+                                "已选择"
+                            } else {
+                                "未选择"
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                        Text(
+                            text = if (rootAuthorized) {
+                                "已授权"
+                            } else {
+                                "未授权"
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                    }
+
+                    Spacer(
+                        modifier = Modifier.width(8.dp)
+                    )
+
+                    /*
+                     * Shizuku
+                     */
+
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+
+                        Text(
+                            text = if (selectedMode == InputMode.SHIZUKU) {
+                                "已选择"
+                            } else {
+                                "未选择"
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                        Text(
+                            text = if (shizukuAuthorized) {
+                                "已授权"
+                            } else {
+                                "未授权"
+                            },
+                            style = MaterialTheme.typography.bodyMedium
                         )
 
                     }
@@ -1422,7 +1685,7 @@ private fun AboutPage(
             Text(
 
                 text =
-                    "V1.2",
+                    "V1.4",
 
                 style =
                     MaterialTheme

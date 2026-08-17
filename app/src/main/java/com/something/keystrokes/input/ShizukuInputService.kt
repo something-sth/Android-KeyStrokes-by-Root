@@ -3,7 +3,8 @@ package com.something.keystrokes.input
 import android.os.Process
 import android.util.Log
 
-import com.something.keystrokes.IShizukuInputTest
+import com.something.keystrokes.IShizukuInputListener
+import com.something.keystrokes.IShizukuInputService
 
 import java.io.BufferedInputStream
 import java.io.File
@@ -14,25 +15,25 @@ import java.nio.ByteOrder
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 
-class ShizukuInputTestService :
-    IShizukuInputTest.Stub() {
+class ShizukuInputService :
+    IShizukuInputService.Stub() {
 
     companion object {
 
         private const val TAG =
-            "ShizukuInputTest"
+            "ShizukuInputService"
 
         /*
-         * Android Linux input_event
+         * Android/Linux input_event
          *
-         * struct input_event {
-         *     struct timeval time; // 16 bytes
-         *     __u16 type;          // 2
-         *     __u16 code;          // 2
-         *     __s32 value;         // 4
-         * }
+         * 64 位设备：
          *
-         * 总大小 = 24 bytes
+         * timeval = 16 bytes
+         * type     = 2
+         * code     = 2
+         * value    = 4
+         *
+         * 总计 24 bytes
          */
         private const val INPUT_EVENT_SIZE = 24
 
@@ -45,18 +46,19 @@ class ShizukuInputTestService :
         private const val KEY_SPACE = 57
     }
 
-    /*
-     * =========================================================
-     * 状态
-     * =========================================================
-     */
-
     private val running =
         AtomicBoolean(false)
 
     @Volatile
     private var status =
         "未启动"
+
+    /*
+     * 主 App 注册的 Binder Listener
+     */
+    @Volatile
+    private var listener:
+            IShizukuInputListener? = null
 
     /*
      * 一个 event 一个线程
@@ -78,12 +80,10 @@ class ShizukuInputTestService :
         val uid =
             Process.myUid()
 
-        Log.i(TAG, "================================")
         Log.i(
             TAG,
             "Shizuku User Service UID = $uid"
         )
-        Log.i(TAG, "================================")
 
         return uid
     }
@@ -91,39 +91,73 @@ class ShizukuInputTestService :
 
     /*
      * =========================================================
-     * 开始测试
+     * 设置事件监听器
      * =========================================================
      */
 
-    override fun startInputTest(): Int {
+    override fun setListener(
+        listener: IShizukuInputListener?
+    ) {
+
+        this.listener =
+            listener
+
+        Log.i(
+            TAG,
+            if (listener != null) {
+                "已注册输入事件 Listener"
+            } else {
+                "已解除输入事件 Listener"
+            }
+        )
+    }
+
+
+    /*
+     * =========================================================
+     * 开始读取
+     * =========================================================
+     */
+
+    override fun start(): Int {
 
         if (running.get()) {
 
             Log.w(
                 TAG,
-                "输入测试已经在运行"
+                "输入监听已经在运行"
             )
 
             return 1
         }
 
+
         val uid =
             Process.myUid()
 
-        Log.i(TAG, "================================")
         Log.i(
             TAG,
-            "开始 Shizuku 输入测试"
+            "================================"
         )
+
+        Log.i(
+            TAG,
+            "开始 Shizuku 输入监听"
+        )
+
         Log.i(
             TAG,
             "UID = $uid"
         )
-        Log.i(TAG, "================================")
+
+        Log.i(
+            TAG,
+            "================================"
+        )
 
 
         /*
-         * 必须是 shell UID
+         * Shizuku User Service 正常情况下应该是 shell UID。
          */
 
         if (uid != 2000) {
@@ -142,7 +176,7 @@ class ShizukuInputTestService :
 
         /*
          * =====================================================
-         * 扫描 event*
+         * 查找 /dev/input/event*
          * =====================================================
          */
 
@@ -169,24 +203,14 @@ class ShizukuInputTestService :
         )
 
 
-        eventFiles.forEach {
-
-            Log.i(
-                TAG,
-                "发现设备：${it.absolutePath}"
-            )
-        }
-
-
         /*
          * =====================================================
-         * 尝试打开所有设备
+         * 尝试打开所有 event
          * =====================================================
          */
 
         val readableDevices =
             eventFiles.filter { file ->
-
                 tryOpen(file)
             }
 
@@ -205,29 +229,15 @@ class ShizukuInputTestService :
         }
 
 
-        Log.i(TAG, "================================")
-
         Log.i(
             TAG,
-            "成功打开 ${readableDevices.size} 个设备"
+            "成功打开 ${readableDevices.size} 个 event 设备"
         )
-
-
-        readableDevices.forEach {
-
-            Log.i(
-                TAG,
-                "OPEN OK: ${it.absolutePath}"
-            )
-        }
-
-
-        Log.i(TAG, "================================")
 
 
         /*
          * =====================================================
-         * 开始监听
+         * 启动读取线程
          * =====================================================
          */
 
@@ -257,7 +267,7 @@ class ShizukuInputTestService :
 
 
         status =
-            "测试运行中：监听 ${readableDevices.size} 个 event 设备"
+            "运行中：监听 ${readableDevices.size} 个 event 设备"
 
 
         Log.i(
@@ -272,15 +282,15 @@ class ShizukuInputTestService :
 
     /*
      * =========================================================
-     * 停止测试
+     * 停止
      * =========================================================
      */
 
-    override fun stopInputTest() {
+    override fun stop() {
 
         Log.i(
             TAG,
-            "停止输入测试"
+            "停止 Shizuku 输入监听"
         )
 
         running.set(false)
@@ -291,9 +301,7 @@ class ShizukuInputTestService :
             inputThreads.forEach {
 
                 try {
-
                     it.interrupt()
-
                 } catch (_: Exception) {
                 }
             }
@@ -309,7 +317,7 @@ class ShizukuInputTestService :
 
     /*
      * =========================================================
-     * 获取状态
+     * 状态
      * =========================================================
      */
 
@@ -341,9 +349,7 @@ class ShizukuInputTestService :
             inputThreads.forEach {
 
                 try {
-
                     it.interrupt()
-
                 } catch (_: Exception) {
                 }
             }
@@ -352,21 +358,18 @@ class ShizukuInputTestService :
         }
 
 
+        listener =
+            null
+
+
         status =
             "服务已销毁"
-
-
-        /*
-         * 不主动 System.exit()
-         *
-         * Shizuku 会负责 UserService 生命周期。
-         */
     }
 
 
     /*
      * =========================================================
-     * 查找 /dev/input/event*
+     * 查找 event*
      * =========================================================
      */
 
@@ -402,13 +405,14 @@ class ShizukuInputTestService :
             .listFiles()
             ?.filter {
 
-                it.name.startsWith("event")
+                it.name.matches(
+                    Regex("event\\d+")
+                )
 
             }
             ?.sortedBy {
 
                 it.name
-
             }
             ?: emptyList()
     }
@@ -416,7 +420,7 @@ class ShizukuInputTestService :
 
     /*
      * =========================================================
-     * 尝试打开设备
+     * 测试打开
      * =========================================================
      */
 
@@ -448,7 +452,8 @@ class ShizukuInputTestService :
             Log.w(
                 TAG,
                 "OPEN FAILED：${file.absolutePath} " +
-                        "${e.javaClass.simpleName}: ${e.message}"
+                        "${e.javaClass.simpleName}: " +
+                        e.message
             )
 
             false
@@ -458,7 +463,7 @@ class ShizukuInputTestService :
 
     /*
      * =========================================================
-     * 读取输入事件
+     * 读取事件
      * =========================================================
      */
 
@@ -479,7 +484,6 @@ class ShizukuInputTestService :
                 8192
             ).use { input ->
 
-
                 val buffer =
                     ByteArray(
                         INPUT_EVENT_SIZE
@@ -490,7 +494,6 @@ class ShizukuInputTestService :
                     running.get() &&
                     !Thread.currentThread().isInterrupted
                 ) {
-
 
                     val count =
                         readFully(
@@ -504,12 +507,6 @@ class ShizukuInputTestService :
                         INPUT_EVENT_SIZE
                     ) {
 
-                        Log.w(
-                            TAG,
-                            "${eventFile.name} " +
-                                    "读取结束，读取到 $count bytes"
-                        )
-
                         break
                     }
 
@@ -517,10 +514,6 @@ class ShizukuInputTestService :
                     val event =
                         parseInputEvent(buffer)
 
-
-                    /*
-                     * 只关心 EV_KEY
-                     */
 
                     if (
                         event.type !=
@@ -531,41 +524,56 @@ class ShizukuInputTestService :
                     }
 
 
-                    val action =
-
-                        when (event.value) {
-
-                            0 ->
-                                "UP"
-
-                            1 ->
-                                "DOWN"
-
-                            2 ->
-                                "REPEAT"
-
-                            else ->
-                                event.value.toString()
-                        }
-
+                    /*
+                     * Linux input_event:
+                     *
+                     * 0 = UP
+                     * 1 = DOWN
+                     * 2 = REPEAT
+                     *
+                     * 这里暂时全部传出去。
+                     */
 
                     val keyName =
                         keyName(event.code)
 
 
-                    /*
-                     * =================================================
-                     * 这是现在最重要的 Log
-                     * =================================================
-                     */
+                    val down =
+                        event.value == 1
+
 
                     Log.i(
                         TAG,
                         "[${eventFile.name}] " +
                                 "KEY $keyName " +
-                                "$action " +
-                                "(code=${event.code})"
+                                "value=${event.value}"
                     )
+
+
+                    /*
+                     * =================================================
+                     * Binder -> 主 App
+                     * =================================================
+                     */
+
+                    try {
+
+                        listener?.onKeyEvent(
+                            event.type,
+                            event.code,
+                            event.value,
+                            keyName,
+                            down
+                        )
+
+                    } catch (e: Exception) {
+
+                        Log.w(
+                            TAG,
+                            "发送 KeyEvent 失败",
+                            e
+                        )
+                    }
                 }
             }
 
@@ -595,7 +603,7 @@ class ShizukuInputTestService :
 
     /*
      * =========================================================
-     * 完整读取 24 bytes
+     * 完整读取
      * =========================================================
      */
 
@@ -621,13 +629,11 @@ class ShizukuInputTestService :
 
 
             if (count < 0) {
-
                 break
             }
 
 
             if (count == 0) {
-
                 continue
             }
 
@@ -642,7 +648,7 @@ class ShizukuInputTestService :
 
     /*
      * =========================================================
-     * 解析 Linux input_event
+     * 解析 input_event
      * =========================================================
      */
 
@@ -681,28 +687,18 @@ class ShizukuInputTestService :
 
 
         return LinuxEvent(
-
-            seconds =
-                seconds,
-
-            microseconds =
-                microseconds,
-
-            type =
-                type,
-
-            code =
-                code,
-
-            value =
-                value
+            seconds,
+            microseconds,
+            type,
+            code,
+            value
         )
     }
 
 
     /*
      * =========================================================
-     * Linux KEY_* 名称
+     * KEY 名称
      * =========================================================
      */
 
@@ -726,7 +722,6 @@ class ShizukuInputTestService :
 
             KEY_SPACE ->
                 "KEY_SPACE"
-
 
             1 ->
                 "KEY_ESC"
@@ -755,7 +750,6 @@ class ShizukuInputTestService :
             15 ->
                 "KEY_TAB"
 
-
             103 ->
                 "KEY_UP"
 
@@ -768,7 +762,6 @@ class ShizukuInputTestService :
             106 ->
                 "KEY_RIGHT"
 
-
             111 ->
                 "KEY_DELETE"
 
@@ -780,7 +773,6 @@ class ShizukuInputTestService :
 
             107 ->
                 "KEY_END"
-
 
             else ->
                 "KEY_$code"
