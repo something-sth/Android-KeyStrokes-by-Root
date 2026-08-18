@@ -1,7 +1,6 @@
 package com.something.keystrokes.input
 
 import java.io.BufferedInputStream
-import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
@@ -232,5 +231,39 @@ class RootInputReader(
             110 to "KEY_INSERT",
             111 to "KEY_DELETE"
         )
+
+        /**
+         * 通过 Root 获取当前 UID
+         *
+         * @return UID，如果失败返回 -1
+         */
+        fun getUid(): Int {
+            return try {
+                val process = Runtime.getRuntime().exec(
+                    arrayOf(
+                        "su",
+                        "-c",
+                        "id -u"
+                    )
+                )
+
+                val output = process.inputStream
+                    .bufferedReader()
+                    .use {
+                        it.readText()
+                    }
+                    .trim()
+
+                val exitCode = process.waitFor()
+
+                if (exitCode != 0) {
+                    -1
+                } else {
+                    output.toIntOrNull() ?: -1
+                }
+            } catch (e: Exception) {
+                -1
+            }
+        }
     }
 }

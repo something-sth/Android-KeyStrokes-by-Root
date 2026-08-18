@@ -1,13 +1,11 @@
 package com.something.keystrokes.input
 
-
 class KeyStateManager {
 
     private val pressedKeys = mutableSetOf<Int>()
 
-
     @Synchronized
-    fun update(event: LinuxInputEvent) {
+    fun update(event: KeyEventData) {
 
         when (event.value) {
 
@@ -16,12 +14,10 @@ class KeyStateManager {
                 pressedKeys.add(event.code)
             }
 
-
             0 -> {
                 // UP
                 pressedKeys.remove(event.code)
             }
-
 
             2 -> {
                 // REPEAT
@@ -30,18 +26,15 @@ class KeyStateManager {
         }
     }
 
-
     @Synchronized
     fun getPressedKeys(): Set<Int> {
         return pressedKeys.toSet()
     }
 
-
     @Synchronized
     fun clear() {
         pressedKeys.clear()
     }
-
 
     companion object {
 
@@ -50,10 +43,8 @@ class KeyStateManager {
         const val KEY_S = 31
         const val KEY_D = 32
 
-
         const val KEY_LEFTSHIFT = 42
         const val KEY_RIGHTSHIFT = 54
-
 
         const val KEY_SPACE = 57
     }

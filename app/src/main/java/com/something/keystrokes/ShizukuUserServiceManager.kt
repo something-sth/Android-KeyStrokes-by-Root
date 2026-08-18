@@ -3,7 +3,6 @@ package com.something.keystrokes
 import android.content.ComponentName
 import android.content.ServiceConnection
 import android.os.IBinder
-import android.os.RemoteException
 import android.util.Log
 import rikka.shizuku.Shizuku
 import rikka.shizuku.Shizuku.UserServiceArgs
@@ -35,6 +34,8 @@ object ShizukuUserServiceManager {
 
     private var serviceConnection: ServiceConnection? = null
 
+    private var onConnected: ((IBinder) -> Unit)? = null
+
 
     /**
      * 当前是否已经连接 UserService
@@ -51,6 +52,18 @@ object ShizukuUserServiceManager {
      */
     fun getBinder(): IBinder? {
         return serviceBinder
+    }
+
+
+    /**
+     * 获取 Shizuku InputService 的 AIDL 接口
+     */
+    fun getService(): IShizukuInputService? {
+        val binder = serviceBinder ?: return null
+        if (!binder.isBinderAlive) {
+            return null
+        }
+        return IShizukuInputService.Stub.asInterface(binder)
     }
 
 
@@ -119,17 +132,11 @@ object ShizukuUserServiceManager {
     /**
      * 启动 UserService。
      *
-     * 注意：
-     *
-     * UserService 本身需要一个实现 IBinder 的服务类。
-     *
-     * 我们下一步会创建：
-     *
-     *     KeyStrokesUserService
-     *
-     * 以及对应的 AIDL。
+     * @param onConnected 连接成功回调，参数为 IBinder
      */
-    fun start() {
+    fun start(
+        onConnected: ((IBinder) -> Unit)? = null
+    ) {
 
         if (!isShizukuRunning()) {
             throw IllegalStateException(
@@ -148,8 +155,11 @@ object ShizukuUserServiceManager {
          * 已经连接就不用重复启动。
          */
         if (isConnected()) {
+            this.onConnected?.invoke(serviceBinder!!)
             return
         }
+
+        this.onConnected = onConnected
 
 
         /*
@@ -168,7 +178,7 @@ object ShizukuUserServiceManager {
             UserServiceArgs(
                 ComponentName(
                     "com.something.keystrokes",
-                    "com.something.keystrokes.input.KeyStrokesUserService"
+                    "com.something.keystrokes.input.ShizukuInputService"
                 )
             )
                 .daemon(false)
@@ -193,6 +203,10 @@ object ShizukuUserServiceManager {
                     )
 
                     serviceBinder = service
+
+                    if (service != null) {
+                        onConnected?.invoke(service)
+                    }
                 }
 
 
@@ -239,7 +253,7 @@ object ShizukuUserServiceManager {
                 UserServiceArgs(
                     ComponentName(
                         "com.something.keystrokes",
-                        "com.something.keystrokes.input.KeyStrokesUserService"
+                        "com.something.keystrokes.input.ShizukuInputService"
                     )
                 )
                     .daemon(false)
@@ -261,5 +275,6 @@ object ShizukuUserServiceManager {
 
         serviceBinder = null
         serviceConnection = null
+        onConnected = null
     }
 }

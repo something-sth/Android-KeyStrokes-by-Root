@@ -3,6 +3,8 @@ package com.something.keystrokes
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -44,19 +46,16 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
 import com.something.keystrokes.input.InputDeviceScanner
+import com.something.keystrokes.input.KeyEventData
 import com.something.keystrokes.input.KeyStateManager
-import com.something.keystrokes.input.LinuxInputEvent
 import com.something.keystrokes.input.OverlayState
+import com.something.keystrokes.input.RootInputReader
 
-import com.something.keystrokes.service.KeyboardService
 import com.something.keystrokes.service.OverlayService
 
 import com.something.keystrokes.ui.KeyButton
 import com.something.keystrokes.ui.theme.KeyStrokesTheme
 
-import java.io.BufferedInputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
@@ -213,6 +212,10 @@ private fun KeystrokesTestScreen() {
         KeyStateManager()
     }
 
+    val mainHandler = remember {
+        Handler(Looper.getMainLooper())
+    }
+
 
     /*
      * 当前页面
@@ -237,6 +240,11 @@ private fun KeystrokesTestScreen() {
     }
 
 
+    var selectedMode by remember {
+        mutableStateOf(InputMode.ROOT)
+    }
+
+
     var devices by remember {
         mutableStateOf(
             emptyList<InputDeviceScanner.InputDeviceInfo>()
@@ -258,8 +266,72 @@ private fun KeystrokesTestScreen() {
     }
 
 
+    val shizukuListener =
+        remember(keyStateManager) {
+
+            object : IShizukuInputListener.Stub() {
+
+                override fun onKeyEvent(
+                    type: Int,
+                    code: Int,
+                    value: Int,
+                    keyName: String,
+                    down: Boolean
+                ) {
+
+                    mainHandler.post {
+
+                        val event =
+                            KeyEventData(
+                                timeMillis = System.currentTimeMillis(),
+                                type = type,
+                                code = code,
+                                value = value,
+                                keyName = keyName,
+                                down = down
+                            )
+
+                        keyStateManager.update(event)
+
+                        pressedKeys =
+                            keyStateManager.getPressedKeys()
+
+                        OverlayState.update(
+                            pressedKeys
+                        )
+
+                        val action =
+                            when (value) {
+
+                                0 -> "UP"
+
+                                1 -> "DOWN"
+
+                                2 -> "REPEAT"
+
+                                else -> value.toString()
+                            }
+
+                        val line =
+                            "${event.timeMillis}  ${event.keyName}  $action"
+
+                        events =
+                            (
+                                    listOf(line) + events
+                                    ).take(80)
+                    }
+                }
+            }
+        }
+
+
     var readerFuture by remember {
         mutableStateOf<Future<*>?>(null)
+    }
+
+
+    var rootInputReader by remember {
+        mutableStateOf<RootInputReader?>(null)
     }
 
 
@@ -273,7 +345,22 @@ private fun KeystrokesTestScreen() {
 
         onDispose {
 
+            rootInputReader?.stop()
+            rootInputReader = null
+
+            // Shizuku 清理
+            try {
+                ShizukuUserServiceManager.getService()
+                    ?.apply {
+                        setListener(null)
+                        stop()
+                    }
+            } catch (_: Exception) {
+            }
+            ShizukuUserServiceManager.stop()
+
             readerFuture?.cancel(true)
+            readerFuture = null
 
             executor.shutdownNow()
 
@@ -292,20 +379,72 @@ private fun KeystrokesTestScreen() {
 
     fun stopReader() {
 
-        readerFuture?.cancel(true)
+        /*
+         * ============================================================
+         * Root
+         * ============================================================
+         */
 
+        rootInputReader?.stop()
+        rootInputReader = null
+
+        /*
+         * ============================================================
+         * Shizuku
+         * ============================================================
+         */
+
+        if (selectedMode == InputMode.SHIZUKU) {
+
+            try {
+
+                ShizukuUserServiceManager
+                    .getService()
+                    ?.apply {
+
+                        setListener(null)
+                        stop()
+
+                    }
+
+            } catch (e: Exception) {
+
+                android.util.Log.e(
+                    "KeyStrokes-Shizuku",
+                    "停止 Shizuku 输入监听失败",
+                    e
+                )
+            }
+
+            ShizukuUserServiceManager.stop()
+        }
+
+        /*
+         * ============================================================
+         * 扫描任务
+         * ============================================================
+         */
+
+        readerFuture?.cancel(true)
         readerFuture = null
 
+        /*
+         * ============================================================
+         * 按键状态
+         * ============================================================
+         */
 
         keyStateManager.clear()
-
         pressedKeys = emptySet()
 
+        /*
+         * ============================================================
+         * UI 状态
+         * ============================================================
+         */
 
         status = "已停止"
-
         isListening = false
-
     }
 
 
@@ -317,162 +456,285 @@ private fun KeystrokesTestScreen() {
 
     fun startReader() {
 
-        if (readerFuture != null) {
-
+        if (isListening) {
             status = "已经正在监听"
-
             return
         }
 
+        when (selectedMode) {
 
-        isListening = true
+            /*
+             * ========================================================
+             * ROOT
+             * ========================================================
+             */
 
-        status = "正在扫描输入设备..."
+            InputMode.ROOT -> {
 
+                status = "正在扫描输入设备..."
 
-        readerFuture =
-            executor.submit {
+                readerFuture =
+                    executor.submit {
 
-                try {
+                        try {
 
-                    /*
-                     * 扫描 /dev/input/event*
-                     */
+                            /*
+                             * 扫描 /dev/input/event*
+                             */
 
-                    val result =
-                        InputDeviceScanner.scan()
+                            val result =
+                                InputDeviceScanner.scan()
 
+                            devices =
+                                result.devices
 
-                    devices =
-                        result.devices
+                            val keyboard =
+                                result.keyboard
 
+                            if (keyboard == null) {
 
-                    val keyboard =
-                        result.keyboard
+                                status =
+                                    result.message
 
+                                isListening =
+                                    false
 
-                    if (keyboard == null) {
+                                readerFuture =
+                                    null
 
-                        status =
-                            result.message
-
-                        isListening =
-                            false
-
-                        readerFuture =
-                            null
-
-                        return@submit
-
-                    }
-
-
-                    val eventPath =
-                        keyboard.eventPath
-
-
-                    status =
-                        "Root 正常，正在监听 $eventPath"
-
-
-                    val reader =
-                        RootKeyboardReader(
-                            eventPath
-                        )
-
-
-                    reader.readEvents { event ->
-
-                        /*
-                         * EV_KEY = 1
-                         */
-
-                        if (event.type != EV_KEY) {
-
-                            return@readEvents
-
-                        }
-
-
-                        keyStateManager.update(
-                            event
-                        )
-
-
-                        pressedKeys =
-                            keyStateManager
-                                .getPressedKeys()
-
-
-                        /*
-                         * 更新悬浮窗
-                         */
-
-                        OverlayState.update(
-                            pressedKeys
-                        )
-
-
-                        val action =
-                            when (event.value) {
-
-                                0 ->
-                                    "UP"
-
-                                1 ->
-                                    "DOWN"
-
-                                2 ->
-                                    "REPEAT"
-
-                                else ->
-                                    event.value.toString()
-
+                                return@submit
                             }
 
+                            val eventPath =
+                                keyboard.eventPath
 
-                        val keyName =
-                            linuxKeyName(
-                                event.code
-                            )
+                            status =
+                                "Root 正常，正在监听 $eventPath"
 
+                            val reader =
+                                RootInputReader(
+                                    eventPath,
+                                    onEvent = { event ->
 
-                        val line =
-                            "${event.timestamp}  $keyName  $action"
+                                        /*
+                                         * 更新按键状态
+                                         */
 
+                                        keyStateManager.update(event)
 
-                        events =
-                            (
-                                    listOf(line) +
-                                            events
-                                    ).take(80)
+                                        pressedKeys =
+                                            keyStateManager.getPressedKeys()
 
+                                        /*
+                                         * 更新悬浮窗
+                                         */
+
+                                        OverlayState.update(
+                                            pressedKeys
+                                        )
+
+                                        /*
+                                         * 记录事件
+                                         */
+
+                                        val action =
+                                            when (event.value) {
+
+                                                0 ->
+                                                    "UP"
+
+                                                1 ->
+                                                    "DOWN"
+
+                                                2 ->
+                                                    "REPEAT"
+
+                                                else ->
+                                                    event.value.toString()
+                                            }
+
+                                        val line =
+                                            "${event.timeMillis}  ${event.keyName}  $action"
+
+                                        events =
+                                            (
+                                                    listOf(line) +
+                                                            events
+                                                    ).take(80)
+                                    },
+                                    onError = { error ->
+
+                                        status =
+                                            "Root 错误：$error"
+
+                                        isListening =
+                                            false
+                                    }
+                                )
+
+                            rootInputReader =
+                                reader
+
+                            reader.start()
+
+                            isListening =
+                                true
+
+                        } catch (e: Exception) {
+
+                            rootInputReader = null
+
+                            isListening = false
+
+                            status =
+                                "Root 监听失败：${e.message ?: e.javaClass.simpleName}"
+                        }
                     }
-
-
-                } catch (
-                    e: InterruptedException
-                ) {
-
-                    /*
-                     * 正常停止监听
-                     */
-
-                    status =
-                        "已停止"
-
-
-                } catch (
-                    e: Exception
-                ) {
-
-                    status =
-                        "监听失败：${e.message ?: e.javaClass.simpleName}"
-
-                }
-
             }
 
+            /*
+             * ========================================================
+             * SHIZUKU
+             * ========================================================
+             */
+
+            InputMode.SHIZUKU -> {
+
+                status =
+                    "正在连接 Shizuku UserService..."
+
+                if (
+                    !ShizukuUserServiceManager
+                        .isShizukuRunning()
+                ) {
+
+                    status =
+                        "Shizuku 未运行"
+
+                    isListening =
+                        false
+
+                    return
+                }
+
+                if (
+                    !ShizukuUserServiceManager
+                        .hasPermission()
+                ) {
+
+                    status =
+                        "Shizuku 未授权"
+
+                    isListening =
+                        false
+
+                    return
+                }
+
+                ShizukuUserServiceManager.start { binder ->
+
+                    try {
+
+                        val service =
+                            IShizukuInputService
+                                .Stub
+                                .asInterface(
+                                    binder
+                                )
+
+                        /*
+                         * 注册 Listener
+                         */
+
+                        service.setListener(
+                            shizukuListener
+                        )
+
+                        /*
+                         * =================================================
+                         * 启动输入监听
+                         * =================================================
+                         */
+
+                        val result =
+                            service.start()
+
+                        mainHandler.post {
+
+                            when (result) {
+
+                                0 -> {
+
+                                    status =
+                                        "Shizuku 模式：正在监听"
+
+                                    isListening = true
+                                }
+
+                                1 -> {
+
+                                    status =
+                                        "Shizuku 输入监听已经在运行"
+
+                                    isListening = true
+                                }
+
+                                2 -> {
+
+                                    status =
+                                        "Shizuku UID 不正确"
+
+                                    isListening = false
+                                }
+
+                                3 -> {
+
+                                    status =
+                                        "Shizuku：没有找到输入设备"
+
+                                    isListening = false
+                                }
+
+                                4 -> {
+
+                                    status =
+                                        "Shizuku：输入设备无法打开"
+
+                                    isListening = false
+                                }
+
+                                else -> {
+
+                                    status =
+                                        "Shizuku 启动失败：$result"
+
+                                    isListening = false
+                                }
+                            }
+                        }
+
+                    } catch (e: Exception) {
+
+                        android.util.Log.e(
+                            "KeyStrokes-Shizuku",
+                            "Shizuku 输入监听启动失败",
+                            e
+                        )
+
+                        mainHandler.post {
+
+                            status =
+                                "Shizuku 启动失败：${
+                                    e.message
+                                        ?: e.javaClass.simpleName
+                                }"
+
+                            isListening = false
+                        }
+                    }
+                }
+            }
+        }
     }
 
 
@@ -491,6 +753,21 @@ private fun KeystrokesTestScreen() {
                 devices = devices,
                 events = events,
                 pressedKeys = pressedKeys,
+
+                selectedMode = selectedMode,
+
+                onModeChanged = { mode ->
+
+                    if (isListening) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "请先停止监听",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        selectedMode = mode
+                    }
+                },
 
                 onOpenSettings = {
 
@@ -545,13 +822,6 @@ private fun KeystrokesTestScreen() {
                 },
 
                 onStartListening = {
-
-                    context.startService(
-                        Intent(
-                            context,
-                            KeyboardService::class.java
-                        )
-                    )
 
                     startReader()
 
@@ -621,6 +891,10 @@ private fun MainPage(
 
     pressedKeys:
     Set<Int>,
+
+    selectedMode: InputMode,
+
+    onModeChanged: (InputMode) -> Unit,
 
     onOpenSettings:
         () -> Unit,
@@ -756,10 +1030,6 @@ private fun MainPage(
              * =================================================
              */
 
-            var selectedMode by remember {
-                mutableStateOf(InputMode.ROOT)
-            }
-
             var rootAuthorized by remember {
                 mutableStateOf(
                     checkRootAuthorized()
@@ -829,7 +1099,7 @@ private fun MainPage(
 
                     Button(
                         onClick = {
-                            selectedMode = InputMode.ROOT
+                            onModeChanged(InputMode.ROOT)
                         },
                         modifier = Modifier
                             .weight(1f)
@@ -844,7 +1114,7 @@ private fun MainPage(
 
                     Button(
                         onClick = {
-                            selectedMode = InputMode.SHIZUKU
+                            onModeChanged(InputMode.SHIZUKU)
                         },
                         modifier = Modifier
                             .weight(1f)
@@ -1815,423 +2085,6 @@ private fun AboutPage(
             )
 
         }
-
-    }
-
-}
-
-
-/*
- * ============================================================
- * Linux input_event
- *
- * Android 16 / 常见 arm64 环境：
- *
- * struct input_event {
- *     struct timeval time;   // 16 bytes
- *     __u16 type;             // 2
- *     __u16 code;             // 2
- *     __s32 value;            // 4
- * }
- *
- * 总大小 = 24 bytes
- * ============================================================
- */
-
-private class RootKeyboardReader(
-    private val eventPath: String
-) {
-
-    @Volatile
-    private var running = true
-
-
-    fun readEvents(
-        onEvent:
-            (LinuxInputEvent) -> Unit
-    ) {
-
-        val process =
-            ProcessBuilder(
-                "su",
-                "-c",
-                "cat \"$eventPath\""
-            )
-                .redirectErrorStream(true)
-                .start()
-
-
-        try {
-
-            BufferedInputStream(
-                process.inputStream,
-                8192
-            ).use { input ->
-
-                val buffer =
-                    ByteArray(24)
-
-
-                while (
-
-                    running &&
-
-                    !Thread
-                        .currentThread()
-                        .isInterrupted
-
-                ) {
-
-                    val read =
-                        readFully(
-                            input,
-                            buffer
-                        )
-
-
-                    if (read < 24) {
-
-                        break
-
-                    }
-
-
-                    val event =
-                        parseInputEvent(
-                            buffer
-                        )
-
-
-                    onEvent(
-                        event
-                    )
-
-                }
-
-            }
-
-        } finally {
-
-            running =
-                false
-
-
-            try {
-
-                process.destroy()
-
-            } catch (
-                _: Exception
-            ) {
-            }
-
-        }
-
-    }
-
-
-    private fun readFully(
-        input:
-        BufferedInputStream,
-
-        buffer:
-        ByteArray
-    ): Int {
-
-        var offset =
-            0
-
-
-        while (
-            offset < buffer.size
-        ) {
-
-            val count =
-                input.read(
-                    buffer,
-                    offset,
-                    buffer.size - offset
-                )
-
-
-            if (count < 0) {
-
-                break
-
-            }
-
-
-            offset +=
-                count
-
-        }
-
-
-        return offset
-
-    }
-
-
-    private fun parseInputEvent(
-        buffer:
-        ByteArray
-    ): LinuxInputEvent {
-
-        val byteBuffer =
-            ByteBuffer
-                .wrap(buffer)
-                .order(
-                    ByteOrder.LITTLE_ENDIAN
-                )
-
-
-        val seconds =
-            byteBuffer.long
-
-
-        val microseconds =
-            byteBuffer.long
-
-
-        val type =
-            byteBuffer
-                .short
-                .toInt() and 0xFFFF
-
-
-        val code =
-            byteBuffer
-                .short
-                .toInt() and 0xFFFF
-
-
-        val value =
-            byteBuffer.int
-
-
-        val timestamp =
-            "$seconds.$microseconds"
-
-
-        return LinuxInputEvent(
-
-            timestamp =
-                timestamp,
-
-            type =
-                type,
-
-            code =
-                code,
-
-            value =
-                value
-
-        )
-
-    }
-
-}
-
-
-/*
- * ============================================================
- * Linux Event
- * ============================================================
- */
-
-private const val EV_KEY =
-    0x01
-
-
-/*
- * ============================================================
- * Linux Key Name
- * ============================================================
- */
-
-private fun linuxKeyName(
-    code: Int
-): String {
-
-    return when (code) {
-
-        1 ->
-            "KEY_ESC"
-
-
-        2 ->
-            "KEY_1"
-
-        3 ->
-            "KEY_2"
-
-        4 ->
-            "KEY_3"
-
-        5 ->
-            "KEY_4"
-
-        6 ->
-            "KEY_5"
-
-        7 ->
-            "KEY_6"
-
-        8 ->
-            "KEY_7"
-
-        9 ->
-            "KEY_8"
-
-        10 ->
-            "KEY_9"
-
-        11 ->
-            "KEY_0"
-
-
-        16 ->
-            "KEY_Q"
-
-        17 ->
-            "KEY_W"
-
-        18 ->
-            "KEY_E"
-
-        19 ->
-            "KEY_R"
-
-        20 ->
-            "KEY_T"
-
-        21 ->
-            "KEY_Y"
-
-        22 ->
-            "KEY_U"
-
-        23 ->
-            "KEY_I"
-
-        24 ->
-            "KEY_O"
-
-        25 ->
-            "KEY_P"
-
-
-        30 ->
-            "KEY_A"
-
-        31 ->
-            "KEY_S"
-
-        32 ->
-            "KEY_D"
-
-        33 ->
-            "KEY_F"
-
-        34 ->
-            "KEY_G"
-
-        35 ->
-            "KEY_H"
-
-        36 ->
-            "KEY_J"
-
-        37 ->
-            "KEY_K"
-
-        38 ->
-            "KEY_L"
-
-
-        44 ->
-            "KEY_Z"
-
-        45 ->
-            "KEY_X"
-
-        46 ->
-            "KEY_C"
-
-        47 ->
-            "KEY_V"
-
-        48 ->
-            "KEY_B"
-
-        49 ->
-            "KEY_N"
-
-        50 ->
-            "KEY_M"
-
-
-        28 ->
-            "KEY_ENTER"
-
-        29 ->
-            "KEY_LEFTCTRL"
-
-
-        42 ->
-            "KEY_LEFTSHIFT"
-
-        54 ->
-            "KEY_RIGHTSHIFT"
-
-
-        56 ->
-            "KEY_LEFTALT"
-
-        100 ->
-            "KEY_RIGHTALT"
-
-
-        57 ->
-            "KEY_SPACE"
-
-
-        14 ->
-            "KEY_BACKSPACE"
-
-        15 ->
-            "KEY_TAB"
-
-
-        103 ->
-            "KEY_UP"
-
-        108 ->
-            "KEY_DOWN"
-
-        105 ->
-            "KEY_LEFT"
-
-        106 ->
-            "KEY_RIGHT"
-
-
-        111 ->
-            "KEY_DELETE"
-
-        110 ->
-            "KEY_INSERT"
-
-        102 ->
-            "KEY_HOME"
-
-        107 ->
-            "KEY_END"
-
-
-        else ->
-            "KEY_$code"
 
     }
 
