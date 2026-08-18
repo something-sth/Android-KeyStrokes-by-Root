@@ -9,6 +9,7 @@ import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -330,8 +332,203 @@ private fun KeystrokesTestScreen() {
     }
 
 
-    var rootInputReader by remember {
-        mutableStateOf<RootInputReader?>(null)
+    /*
+     * ============================================================
+     * 一、把 rootInputReader 改成 Map 结构
+     * ============================================================
+     */
+
+    var rootInputReaders by remember {
+        mutableStateOf<Map<String, RootInputReader>>(emptyMap())
+    }
+
+
+    /*
+     * ============================================================
+     * 二、增加设备选择状态
+     * ============================================================
+     */
+
+    var selectedDevicePaths by remember {
+        mutableStateOf(emptySet<String>())
+    }
+
+
+    var autoSelectedDevicePath by remember {
+        mutableStateOf<String?>(null)
+    }
+
+
+    /*
+     * ============================================================
+     * 第一处：统一扫描函数
+     *
+     * Root / Shizuku 共用
+     *
+     * 负责：
+     * 1. 扫描所有输入设备
+     * 2. 更新设备列表
+     * 3. 当前没有设备选择时执行自动选择
+     * 4. 已经存在手动选择时绝不覆盖
+     * ============================================================
+     */
+
+    fun scanInputDevices(): Boolean {
+
+        return try {
+
+            val result =
+                InputDeviceScanner.scan()
+
+            /*
+             * 更新设备列表
+             */
+            devices =
+                result.devices
+
+            /*
+             * ========================================================
+             * 已经存在设备选择
+             *
+             * 说明用户已经手动选择过设备。
+             *
+             * 无论自动扫描结果是什么，
+             * 都绝对不能覆盖用户选择。
+             * ========================================================
+             */
+
+            if (selectedDevicePaths.isNotEmpty()) {
+
+                /*
+                 * 如果设备仍然存在，就继续使用。
+                 *
+                 * 这里不修改 selectedDevicePaths。
+                 */
+
+                autoSelectedDevicePath = null
+
+                return true
+            }
+
+            /*
+             * ========================================================
+             * 当前没有设备选择
+             *
+             * 尝试自动选择键盘。
+             * ========================================================
+             */
+
+            val keyboard =
+                result.keyboard
+
+            if (keyboard != null) {
+
+                selectedDevicePaths =
+                    setOf(
+                        keyboard.eventPath
+                    )
+
+                autoSelectedDevicePath =
+                    keyboard.eventPath
+
+                return true
+
+            }
+
+            /*
+             * ========================================================
+             * 自动识别失败
+             * ========================================================
+             */
+
+            autoSelectedDevicePath =
+                null
+
+            status =
+                "未自动识别到设备，请手动选择"
+
+            false
+
+        } catch (e: Exception) {
+
+            status =
+                "扫描输入设备失败：${
+                    e.message
+                        ?: e.javaClass.simpleName
+                }"
+
+            false
+        }
+    }
+
+
+    /*
+     * ============================================================
+     * 设备点击切换逻辑
+     * ============================================================
+     */
+
+    fun toggleDevice(eventPath: String) {
+
+        if (isListening) {
+            android.widget.Toast.makeText(
+                context,
+                "请先停止监听再修改设备选择",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        val newSelection =
+            selectedDevicePaths.toMutableSet()
+
+        if (eventPath in newSelection) {
+
+            /*
+             * 当前已选，尝试取消
+             */
+
+            if (newSelection.size == 1) {
+
+                android.widget.Toast.makeText(
+                    context,
+                    "至少选择一个设备",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+
+                return
+            }
+
+            newSelection.remove(eventPath)
+
+            /*
+             * 如果取消的是自动选择的设备，
+             * 那么它就不再属于自动选择状态。
+             */
+
+            if (eventPath == autoSelectedDevicePath) {
+                autoSelectedDevicePath = null
+            }
+
+        } else {
+
+            /*
+             * 当前未选，加入手动选择
+             */
+
+            newSelection.add(eventPath)
+
+            /*
+             * 用户开始手动修改选择，
+             * 自动选择标记不再作为当前选择依据。
+             */
+
+            if (eventPath != autoSelectedDevicePath) {
+                autoSelectedDevicePath = null
+            }
+        }
+
+        selectedDevicePaths = newSelection
     }
 
 
@@ -345,8 +542,14 @@ private fun KeystrokesTestScreen() {
 
         onDispose {
 
-            rootInputReader?.stop()
-            rootInputReader = null
+            /*
+             * 三、生命周期里的 Root 清理 - 改成遍历 Map
+             */
+
+            rootInputReaders.values.forEach {
+                it.stop()
+            }
+            rootInputReaders = emptyMap()
 
             // Shizuku 清理
             try {
@@ -380,13 +583,13 @@ private fun KeystrokesTestScreen() {
     fun stopReader() {
 
         /*
-         * ============================================================
-         * Root
-         * ============================================================
+         * 四、stopReader() 里的 Root 清理 - 改成遍历 Map
          */
 
-        rootInputReader?.stop()
-        rootInputReader = null
+        rootInputReaders.values.forEach {
+            it.stop()
+        }
+        rootInputReaders = emptyMap()
 
         /*
          * ============================================================
@@ -479,110 +682,142 @@ private fun KeystrokesTestScreen() {
                         try {
 
                             /*
-                             * 扫描 /dev/input/event*
+                             * ========================================================
+                             * 第二处：统一扫描设备
+                             *
+                             * Root / Shizuku 都使用同一套设备选择逻辑
+                             * ========================================================
                              */
 
-                            val result =
-                                InputDeviceScanner.scan()
+                            if (!scanInputDevices()) {
 
-                            devices =
-                                result.devices
-
-                            val keyboard =
-                                result.keyboard
-
-                            if (keyboard == null) {
-
-                                status =
-                                    result.message
-
-                                isListening =
-                                    false
-
-                                readerFuture =
-                                    null
+                                isListening = false
+                                readerFuture = null
 
                                 return@submit
                             }
 
-                            val eventPath =
-                                keyboard.eventPath
+                            /*
+                             * 当前仍然没有设备
+                             */
 
-                            status =
-                                "Root 正常，正在监听 $eventPath"
+                            if (selectedDevicePaths.isEmpty()) {
 
-                            val reader =
-                                RootInputReader(
-                                    eventPath,
-                                    onEvent = { event ->
+                                status =
+                                    "请先选择要监听的输入设备"
 
-                                        /*
-                                         * 更新按键状态
-                                         */
+                                isListening = false
+                                readerFuture = null
 
-                                        keyStateManager.update(event)
+                                return@submit
+                            }
 
-                                        pressedKeys =
-                                            keyStateManager.getPressedKeys()
+                            /*
+                             * ============================================================
+                             * 后面继续保持原来的 RootInputReader 创建逻辑
+                             * ============================================================
+                             */
 
-                                        /*
-                                         * 更新悬浮窗
-                                         */
+                            /*
+                             * ============================================================
+                             * 创建多个 Reader
+                             * ============================================================
+                             */
 
-                                        OverlayState.update(
-                                            pressedKeys
-                                        )
+                            val newReaders = mutableMapOf<String, RootInputReader>()
 
-                                        /*
-                                         * 记录事件
-                                         */
+                            /*
+                             * onEvent 处理逻辑 - 所有 Reader 共用
+                             */
 
-                                        val action =
-                                            when (event.value) {
+                            val onEvent: (KeyEventData) -> Unit = { event ->
 
-                                                0 ->
-                                                    "UP"
+                                /*
+                                 * 更新按键状态
+                                 */
 
-                                                1 ->
-                                                    "DOWN"
+                                keyStateManager.update(event)
 
-                                                2 ->
-                                                    "REPEAT"
+                                pressedKeys =
+                                    keyStateManager.getPressedKeys()
 
-                                                else ->
-                                                    event.value.toString()
-                                            }
+                                /*
+                                 * 更新悬浮窗
+                                 */
 
-                                        val line =
-                                            "${event.timeMillis}  ${event.keyName}  $action"
-
-                                        events =
-                                            (
-                                                    listOf(line) +
-                                                            events
-                                                    ).take(80)
-                                    },
-                                    onError = { error ->
-
-                                        status =
-                                            "Root 错误：$error"
-
-                                        isListening =
-                                            false
-                                    }
+                                OverlayState.update(
+                                    pressedKeys
                                 )
 
-                            rootInputReader =
-                                reader
+                                /*
+                                 * 记录事件
+                                 */
 
-                            reader.start()
+                                val action =
+                                    when (event.value) {
 
-                            isListening =
-                                true
+                                        0 ->
+                                            "UP"
+
+                                        1 ->
+                                            "DOWN"
+
+                                        2 ->
+                                            "REPEAT"
+
+                                        else ->
+                                            event.value.toString()
+                                    }
+
+                                val line =
+                                    "${event.timeMillis}  ${event.keyName}  $action"
+
+                                events =
+                                    (
+                                            listOf(line) +
+                                                    events
+                                            ).take(80)
+                            }
+
+                            /*
+                             * onError 处理逻辑 - 所有 Reader 共用
+                             */
+
+                            val onError: (String) -> Unit = { error ->
+
+                                status =
+                                    "Root 错误：$error"
+
+                                isListening =
+                                    false
+                            }
+
+                            selectedDevicePaths.forEach { eventPath ->
+
+                                val reader =
+                                    RootInputReader(
+                                        eventPath,
+                                        onEvent = onEvent,
+                                        onError = onError
+                                    )
+
+                                newReaders[eventPath] = reader
+                            }
+
+                            rootInputReaders = newReaders
+
+                            newReaders.values.forEach {
+                                it.start()
+                            }
+
+                            status =
+                                "Root 正常，正在监听 ${selectedDevicePaths.size} 个设备"
+
+                            isListening = true
 
                         } catch (e: Exception) {
 
-                            rootInputReader = null
+                            rootInputReaders = emptyMap()
 
                             isListening = false
 
@@ -601,7 +836,30 @@ private fun KeystrokesTestScreen() {
             InputMode.SHIZUKU -> {
 
                 status =
-                    "正在连接 Shizuku UserService..."
+                    "正在扫描输入设备..."
+
+                /*
+                 * ========================================================
+                 * 第三处：Shizuku 同样使用统一设备扫描逻辑
+                 * ========================================================
+                 */
+
+                if (!scanInputDevices()) {
+
+                    isListening = false
+
+                    return
+                }
+
+                if (selectedDevicePaths.isEmpty()) {
+
+                    status =
+                        "请先选择要监听的输入设备"
+
+                    isListening = false
+
+                    return
+                }
 
                 if (
                     !ShizukuUserServiceManager
@@ -631,108 +889,119 @@ private fun KeystrokesTestScreen() {
                     return
                 }
 
-                ShizukuUserServiceManager.start { binder ->
+                /*
+                 * =====================================================
+                 * 传入 selectedDevicePaths
+                 * =====================================================
+                 */
 
-                    try {
+                ShizukuUserServiceManager.start(
+                    eventPaths = selectedDevicePaths.toTypedArray(),
+                    onConnected = { binder ->
 
-                        val service =
-                            IShizukuInputService
-                                .Stub
-                                .asInterface(
-                                    binder
-                                )
+                        try {
 
-                        /*
-                         * 注册 Listener
-                         */
+                            val service =
+                                IShizukuInputService
+                                    .Stub
+                                    .asInterface(
+                                        binder
+                                    )
 
-                        service.setListener(
-                            shizukuListener
-                        )
+                            /*
+                             * 注册 Listener
+                             */
 
-                        /*
-                         * =================================================
-                         * 启动输入监听
-                         * =================================================
-                         */
+                            service.setListener(
+                                shizukuListener
+                            )
 
-                        val result =
-                            service.start()
+                            /*
+                             * =================================================
+                             * 启动输入监听
+                             *
+                             * 传入 selectedDevicePaths
+                             * =================================================
+                             */
 
-                        mainHandler.post {
+                            val result =
+                                service.start(selectedDevicePaths.toTypedArray())
 
-                            when (result) {
+                            mainHandler.post {
 
-                                0 -> {
+                                when (result) {
 
-                                    status =
-                                        "Shizuku 模式：正在监听"
+                                    0 -> {
 
-                                    isListening = true
-                                }
+                                        status =
+                                            "Shizuku 模式：正在监听"
 
-                                1 -> {
+                                        isListening = true
+                                    }
 
-                                    status =
-                                        "Shizuku 输入监听已经在运行"
+                                    1 -> {
 
-                                    isListening = true
-                                }
+                                        status =
+                                            "Shizuku 输入监听已经在运行"
 
-                                2 -> {
+                                        isListening = true
+                                    }
 
-                                    status =
-                                        "Shizuku UID 不正确"
+                                    2 -> {
 
-                                    isListening = false
-                                }
+                                        status =
+                                            "Shizuku UID 不正确"
 
-                                3 -> {
+                                        isListening = false
+                                    }
 
-                                    status =
-                                        "Shizuku：没有找到输入设备"
+                                    3 -> {
 
-                                    isListening = false
-                                }
+                                        status =
+                                            "Shizuku：没有找到输入设备"
 
-                                4 -> {
+                                        isListening = false
+                                    }
 
-                                    status =
-                                        "Shizuku：输入设备无法打开"
+                                    4 -> {
 
-                                    isListening = false
-                                }
+                                        status =
+                                            "Shizuku：输入设备无法打开"
 
-                                else -> {
+                                        isListening = false
+                                    }
 
-                                    status =
-                                        "Shizuku 启动失败：$result"
+                                    else -> {
 
-                                    isListening = false
+                                        status =
+                                            "Shizuku 启动失败：$result"
+
+                                        isListening = false
+                                    }
                                 }
                             }
-                        }
 
-                    } catch (e: Exception) {
+                        } catch (e: Exception) {
 
-                        android.util.Log.e(
-                            "KeyStrokes-Shizuku",
-                            "Shizuku 输入监听启动失败",
-                            e
-                        )
+                            android.util.Log.e(
+                                "KeyStrokes-Shizuku",
+                                "Shizuku 输入监听启动失败",
+                                e
+                            )
 
-                        mainHandler.post {
+                            mainHandler.post {
 
-                            status =
-                                "Shizuku 启动失败：${
-                                    e.message
-                                        ?: e.javaClass.simpleName
-                                }"
+                                status =
+                                    "Shizuku 启动失败：${
+                                        e.message
+                                            ?: e.javaClass.simpleName
+                                    }"
 
-                            isListening = false
+                                isListening = false
+                            }
                         }
                     }
-                }
+                )
             }
         }
     }
@@ -755,6 +1024,12 @@ private fun KeystrokesTestScreen() {
                 pressedKeys = pressedKeys,
 
                 selectedMode = selectedMode,
+                selectedDevicePaths = selectedDevicePaths,
+                autoSelectedDevicePath = autoSelectedDevicePath,
+
+                onDeviceToggle = { eventPath ->
+                    toggleDevice(eventPath)
+                },
 
                 onModeChanged = { mode ->
 
@@ -894,6 +1169,12 @@ private fun MainPage(
 
     selectedMode: InputMode,
 
+    selectedDevicePaths: Set<String>,
+
+    autoSelectedDevicePath: String?,
+
+    onDeviceToggle: (String) -> Unit,
+
     onModeChanged: (InputMode) -> Unit,
 
     onOpenSettings:
@@ -965,7 +1246,7 @@ private fun MainPage(
                     Text(
 
                         text =
-                            "Keystrokes V1.4",
+                            "Keystrokes V1.4.4",
 
                         style =
                             MaterialTheme
@@ -978,7 +1259,7 @@ private fun MainPage(
                     Text(
 
                         text =
-                            "通过Root权限来监听外接键盘输入",
+                            "通过Root或Shizuku监听外接输入设备",
 
                         style =
                             MaterialTheme
@@ -1347,23 +1628,67 @@ private fun MainPage(
                     devices
                 ) { device ->
 
-                    Text(
+                    val isSelected =
+                        device.eventPath in selectedDevicePaths
 
-                        text =
-                            "${device.eventName} | " +
-                                    "${device.deviceName} | " +
-                                    if (device.isKeyboard) {
-                                        "键盘"
-                                    } else {
-                                        "非键盘"
-                                    },
+                    val isAutoSelected =
+                        device.eventPath == autoSelectedDevicePath
+
+                    Row(
 
                         modifier =
-                            Modifier.padding(
-                                vertical = 4.dp
-                            )
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onDeviceToggle(device.eventPath)
+                                }
+                                .padding(vertical = 4.dp),
 
-                    )
+                        verticalAlignment =
+                            Alignment.CenterVertically
+
+                    ) {
+
+                        /*
+                         * RadioButton 外观，但逻辑是多选
+                         */
+
+                        RadioButton(
+
+                            selected = isSelected,
+
+                            onClick = {
+                                onDeviceToggle(device.eventPath)
+                            }
+
+                        )
+
+
+                        Text(
+
+                            text =
+                                "${device.eventPath} | " +
+                                        "${device.deviceName}" +
+                                        if (device.isKeyboard) {
+                                            " | 键盘"
+                                        } else {
+                                            " | 非键盘"
+                                        } +
+                                        if (isAutoSelected) {
+                                            " (自动选择)"
+                                        } else {
+                                            ""
+                                        },
+
+                            style =
+                                MaterialTheme.typography.bodyMedium,
+
+                            modifier =
+                                Modifier.padding(start = 4.dp)
+
+                        )
+
+                    }
 
                 }
 
@@ -1955,7 +2280,7 @@ private fun AboutPage(
             Text(
 
                 text =
-                    "V1.4",
+                    "V1.4.4",
 
                 style =
                     MaterialTheme

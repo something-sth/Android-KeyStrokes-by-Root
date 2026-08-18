@@ -132,9 +132,11 @@ object ShizukuUserServiceManager {
     /**
      * 启动 UserService。
      *
+     * @param eventPaths 要监听的 event 路径列表，例如 arrayOf("/dev/input/event1", "/dev/input/event4")
      * @param onConnected 连接成功回调，参数为 IBinder
      */
     fun start(
+        eventPaths: Array<String> = emptyArray(),
         onConnected: ((IBinder) -> Unit)? = null
     ) {
 
@@ -205,6 +207,13 @@ object ShizukuUserServiceManager {
                     serviceBinder = service
 
                     if (service != null) {
+                        // 启动后调用 start 传入 eventPaths
+                        try {
+                            val inputService = IShizukuInputService.Stub.asInterface(service)
+                            inputService?.start(eventPaths)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "调用 UserService.start() 失败", e)
+                        }
                         onConnected?.invoke(service)
                     }
                 }

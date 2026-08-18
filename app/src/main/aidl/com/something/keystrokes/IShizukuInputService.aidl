@@ -6,7 +6,7 @@ interface IShizukuInputService {
 
     int getUid();
 
-    int start();
+    int start(in String[] eventPaths);
 
     void stop();
 

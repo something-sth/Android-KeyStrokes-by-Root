@@ -119,7 +119,7 @@ class ShizukuInputService :
      * =========================================================
      */
 
-    override fun start(): Int {
+    override fun start(eventPaths: Array<String>): Int {
 
         if (running.get()) {
 
@@ -152,6 +152,11 @@ class ShizukuInputService :
 
         Log.i(
             TAG,
+            "收到 eventPaths: ${eventPaths.joinToString()}"
+        )
+
+        Log.i(
+            TAG,
             "================================"
         )
 
@@ -176,49 +181,51 @@ class ShizukuInputService :
 
         /*
          * =====================================================
-         * 查找 /dev/input/event*
+         * 使用传入的 eventPaths
          * =====================================================
          */
 
-        val eventFiles =
-            findEventFiles()
-
-        if (eventFiles.isEmpty()) {
+        if (eventPaths.isEmpty()) {
 
             status =
-                "没有找到 /dev/input/event*"
+                "传入的 event 列表为空，不启动任何监听线程"
 
-            Log.e(
+            Log.w(
                 TAG,
                 status
             )
 
-            return 3
+            return 0
         }
 
 
         Log.i(
             TAG,
-            "发现 ${eventFiles.size} 个 event 设备"
+            "收到 ${eventPaths.size} 个 event 路径"
         )
 
 
         /*
          * =====================================================
-         * 尝试打开所有 event
+         * 尝试打开指定的 event
          * =====================================================
          */
 
         val readableDevices =
-            eventFiles.filter { file ->
-                tryOpen(file)
+            eventPaths.mapNotNull { path ->
+                val file = File(path)
+                if (tryOpen(file)) {
+                    file
+                } else {
+                    null
+                }
             }
 
 
         if (readableDevices.isEmpty()) {
 
             status =
-                "找到 event*，但全部无法打开"
+                "所有指定的 event 都无法打开"
 
             Log.e(
                 TAG,
@@ -364,57 +371,6 @@ class ShizukuInputService :
 
         status =
             "服务已销毁"
-    }
-
-
-    /*
-     * =========================================================
-     * 查找 event*
-     * =========================================================
-     */
-
-    private fun findEventFiles(): List<File> {
-
-        val inputDirectory =
-            File("/dev/input")
-
-
-        if (!inputDirectory.exists()) {
-
-            Log.e(
-                TAG,
-                "/dev/input 不存在"
-            )
-
-            return emptyList()
-        }
-
-
-        if (!inputDirectory.isDirectory) {
-
-            Log.e(
-                TAG,
-                "/dev/input 不是目录"
-            )
-
-            return emptyList()
-        }
-
-
-        return inputDirectory
-            .listFiles()
-            ?.filter {
-
-                it.name.matches(
-                    Regex("event\\d+")
-                )
-
-            }
-            ?.sortedBy {
-
-                it.name
-            }
-            ?: emptyList()
     }
 
 
