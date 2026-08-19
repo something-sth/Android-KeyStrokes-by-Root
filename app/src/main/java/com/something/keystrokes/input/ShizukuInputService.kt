@@ -68,6 +68,16 @@ class ShizukuInputService :
             mutableListOf<Thread>()
         )
 
+    /*
+     * =========================================================
+     * 输入流生命周期管理
+     * =========================================================
+     */
+    private val inputStreams =
+        Collections.synchronizedList(
+            mutableListOf<BufferedInputStream>()
+        )
+
 
     /*
      * =========================================================
@@ -92,46 +102,46 @@ class ShizukuInputService :
     /*
      * =========================================================
      * 扫描输入设备
+     *
+     * 只枚举 /dev/input/event*，不读取设备名称。
      * =========================================================
      */
 
     override fun scanDevices(): Array<String> {
 
-        val uid = Process.myUid()
+        val uid =
+            Process.myUid()
 
-        Log.i(TAG, "开始由 Shizuku UserService 扫描输入设备，UID = $uid")
+        Log.i(
+            TAG,
+            "开始由 Shizuku UserService 扫描输入设备，UID = $uid"
+        )
 
         if (uid != 2000) {
-            Log.e(TAG, "扫描失败：UserService UID 不正确：$uid")
+
+            Log.e(
+                TAG,
+                "扫描失败：UserService UID 不正确：$uid"
+            )
+
             return emptyArray()
         }
 
         return try {
 
-            val process = ProcessBuilder(
-                "/system/bin/sh",
-                "-c",
-                """
-                for f in /dev/input/event*; do
-                    [ -e "${'$'}f" ] || continue
-                    event=${'$'}(basename "${'$'}f")
-                    name1=${'$'}(
-                        cat "/sys/class/input/${'$'}event/device/name" \
-                        2>/dev/null
-                    )
-                    name2=${'$'}(
-                        cat "/sys/class/input/${'$'}event/device/device/name" \
-                        2>/dev/null
-                    )
-                    printf '%s|%s|%s\n' \
-                        "${'$'}f" \
-                        "${'$'}name1" \
-                        "${'$'}name2"
-                done
-                """.trimIndent()
-            )
-                .redirectErrorStream(true)
-                .start()
+            val process =
+                ProcessBuilder(
+                    "/system/bin/sh",
+                    "-c",
+                    """
+                    for f in /dev/input/event*; do
+                        [ -e "${'$'}f" ] || continue
+                        printf '%s\n' "${'$'}f"
+                    done
+                    """.trimIndent()
+                )
+                    .redirectErrorStream(true)
+                    .start()
 
             val result =
                 process.inputStream
@@ -141,16 +151,29 @@ class ShizukuInputService :
             process.waitFor()
 
             result
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
+                .map {
+                    it.trim()
+                }
+                .filter {
+                    it.matches(
+                        Regex("/dev/input/event\\d+")
+                    )
+                }
                 .forEach {
+
                     Log.i(
                         TAG,
-                        "扫描结果：$it"
+                        "发现 event：$it"
                     )
                 }
 
-            result.toTypedArray()
+            result
+                .filter {
+                    it.matches(
+                        Regex("/dev/input/event\\d+")
+                    )
+                }
+                .toTypedArray()
 
         } catch (e: Exception) {
 
@@ -199,12 +222,12 @@ class ShizukuInputService :
 
         if (running.get()) {
 
-            Log.w(
+            Log.i(
                 TAG,
-                "输入监听已经在运行"
+                "检测到已有输入监听，先停止旧监听，再启动新的监听"
             )
 
-            return 1
+            stop()
         }
 
 
@@ -287,15 +310,40 @@ class ShizukuInputService :
          * =====================================================
          */
 
+        Log.i(
+            TAG,
+            "准备测试打开 ${eventPaths.size} 个 event"
+        )
+
         val readableDevices =
             eventPaths.mapNotNull { path ->
+
+                Log.i(
+                    TAG,
+                    "进入 tryOpen：$path"
+                )
+
                 val file = File(path)
-                if (tryOpen(file)) {
+
+                val result =
+                    tryOpen(file)
+
+                Log.i(
+                    TAG,
+                    "tryOpen 返回：$path -> $result"
+                )
+
+                if (result) {
                     file
                 } else {
                     null
                 }
             }
+
+        Log.i(
+            TAG,
+            "tryOpen 完成，成功打开 ${readableDevices.size} 个设备"
+        )
 
 
         if (readableDevices.isEmpty()) {
@@ -327,6 +375,7 @@ class ShizukuInputService :
         running.set(true)
 
         inputThreads.clear()
+        inputStreams.clear()
 
 
         readableDevices.forEach { file ->
@@ -376,9 +425,34 @@ class ShizukuInputService :
             "停止 Shizuku 输入监听"
         )
 
+        /*
+         * 先通知所有读取线程退出
+         */
         running.set(false)
 
+        /*
+         * 关闭正在阻塞读取的输入流。
+         *
+         * 仅 interrupt() 对 FileInputStream /
+         * BufferedInputStream 不够可靠。
+         */
+        synchronized(inputStreams) {
 
+            inputStreams.forEach {
+
+                try {
+                    it.close()
+                } catch (_: Exception) {
+                }
+
+            }
+
+            inputStreams.clear()
+        }
+
+        /*
+         * 再中断线程
+         */
         synchronized(inputThreads) {
 
             inputThreads.forEach {
@@ -387,14 +461,19 @@ class ShizukuInputService :
                     it.interrupt()
                 } catch (_: Exception) {
                 }
+
             }
 
             inputThreads.clear()
         }
 
-
         status =
             "已停止"
+
+        Log.i(
+            TAG,
+            "Shizuku 输入监听已停止"
+        )
     }
 
 
@@ -423,9 +502,21 @@ class ShizukuInputService :
             "Shizuku User Service destroy()"
         )
 
-
         running.set(false)
 
+        synchronized(inputStreams) {
+
+            inputStreams.forEach {
+
+                try {
+                    it.close()
+                } catch (_: Exception) {
+                }
+
+            }
+
+            inputStreams.clear()
+        }
 
         synchronized(inputThreads) {
 
@@ -435,15 +526,13 @@ class ShizukuInputService :
                     it.interrupt()
                 } catch (_: Exception) {
                 }
+
             }
 
             inputThreads.clear()
         }
 
-
-        listener =
-            null
-
+        listener = null
 
         status =
             "服务已销毁"
@@ -508,126 +597,125 @@ class ShizukuInputService :
             "开始读取：${eventFile.absolutePath}"
         )
 
+        var input: BufferedInputStream? = null
 
         try {
 
-            BufferedInputStream(
-                FileInputStream(eventFile),
-                8192
-            ).use { input ->
+            input =
+                BufferedInputStream(
+                    FileInputStream(eventFile),
+                    8192
+                )
 
-                val buffer =
-                    ByteArray(
-                        INPUT_EVENT_SIZE
+            inputStreams.add(input)
+
+            val buffer =
+                ByteArray(
+                    INPUT_EVENT_SIZE
+                )
+
+
+            while (
+                running.get() &&
+                !Thread.currentThread().isInterrupted
+            ) {
+
+                val count =
+                    readFully(
+                        input,
+                        buffer
                     )
 
 
-                while (
-                    running.get() &&
-                    !Thread.currentThread().isInterrupted
+                if (
+                    count <
+                    INPUT_EVENT_SIZE
                 ) {
 
-                    val count =
-                        readFully(
-                            input,
-                            buffer
-                        )
+                    break
+                }
 
 
-                    if (
-                        count <
-                        INPUT_EVENT_SIZE
-                    ) {
-
-                        break
-                    }
+                val event =
+                    parseInputEvent(buffer)
 
 
-                    val event =
-                        parseInputEvent(buffer)
+                if (
+                    event.type !=
+                    EV_KEY
+                ) {
+
+                    continue
+                }
 
 
-                    if (
-                        event.type !=
-                        EV_KEY
-                    ) {
-
-                        continue
-                    }
+                val keyName =
+                    keyName(event.code)
 
 
-                    /*
-                     * Linux input_event:
-                     *
-                     * 0 = UP
-                     * 1 = DOWN
-                     * 2 = REPEAT
-                     *
-                     * 这里暂时全部传出去。
-                     */
-
-                    val keyName =
-                        keyName(event.code)
+                val down =
+                    event.value == 1
 
 
-                    val down =
-                        event.value == 1
+                Log.d(
+                    TAG,
+                    "[${eventFile.name}] " +
+                            "KEY $keyName " +
+                            "value=${event.value}"
+                )
 
 
-                    Log.i(
-                        TAG,
-                        "[${eventFile.name}] " +
-                                "KEY $keyName " +
-                                "value=${event.value}"
+                try {
+
+                    listener?.onKeyEvent(
+                        event.type,
+                        event.code,
+                        event.value,
+                        keyName,
+                        down
                     )
 
+                } catch (e: Exception) {
 
-                    /*
-                     * =================================================
-                     * Binder -> 主 App
-                     * =================================================
-                     */
-
-                    try {
-
-                        listener?.onKeyEvent(
-                            event.type,
-                            event.code,
-                            event.value,
-                            keyName,
-                            down
-                        )
-
-                    } catch (e: Exception) {
-
-                        Log.w(
-                            TAG,
-                            "发送 KeyEvent 失败",
-                            e
-                        )
-                    }
+                    Log.w(
+                        TAG,
+                        "发送按键事件失败",
+                        e
+                    )
                 }
             }
 
 
         } catch (e: Exception) {
 
+            /*
+             * stop() 主动 close() 流时，
+             * 这里出现 IOException 属于正常情况。
+             */
             if (running.get()) {
 
                 Log.e(
                     TAG,
-                    "${eventFile.name} 读取失败：" +
-                            "${e.javaClass.simpleName}: " +
-                            e.message,
+                    "读取 ${eventFile.absolutePath} 失败",
                     e
                 )
             }
 
         } finally {
 
+            if (input != null) {
+
+                inputStreams.remove(input)
+
+                try {
+                    input.close()
+                } catch (_: Exception) {
+                }
+            }
+
             Log.i(
                 TAG,
-                "读取线程结束：${eventFile.name}"
+                "读取线程结束：${eventFile.absolutePath}"
             )
         }
     }

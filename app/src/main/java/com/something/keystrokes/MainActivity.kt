@@ -197,65 +197,6 @@ private enum class AppPage {
 
 /*
  * ============================================================
- * 解析 Shizuku 扫描结果
- * ============================================================
- */
-
-private fun parseShizukuDevices(
-    rawDevices: Array<String>
-): List<InputDeviceScanner.InputDeviceInfo> {
-
-    return rawDevices.mapNotNull { line ->
-
-        val parts =
-            line.split("|", limit = 2)
-
-        if (parts.isEmpty()) {
-            return@mapNotNull null
-        }
-
-        val eventPath =
-            parts[0].trim()
-
-        if (!eventPath.matches(
-                Regex("/dev/input/event\\d+")
-            )
-        ) {
-            return@mapNotNull null
-        }
-
-        val eventName =
-            eventPath.substringAfterLast("/")
-
-        val deviceName =
-            if (parts.size >= 2) {
-                parts[1]
-                    .trim()
-                    .ifEmpty { "(unknown)" }
-            } else {
-                "(unknown)"
-            }
-
-        val lower =
-            deviceName.lowercase()
-
-        val isKeyboard =
-            lower.contains("keyboard") ||
-                    lower.contains("keypad") ||
-                    lower.contains("kbd")
-
-        InputDeviceScanner.InputDeviceInfo(
-            eventName = eventName,
-            eventPath = eventPath,
-            deviceName = deviceName,
-            isKeyboard = isKeyboard
-        )
-    }
-}
-
-
-/*
- * ============================================================
  * 主界面
  * ============================================================
  */
@@ -419,22 +360,11 @@ private fun KeystrokesTestScreen() {
     }
 
 
-    var autoSelectedDevicePath by remember {
-        mutableStateOf<String?>(null)
-    }
-
-
     /*
      * ============================================================
-     * 第一处：统一扫描函数
+     * Root 专用扫描函数
      *
-     * Root / Shizuku 共用
-     *
-     * 负责：
-     * 1. 扫描所有输入设备
-     * 2. 更新设备列表
-     * 3. 当前没有设备选择时执行自动选择
-     * 4. 已经存在手动选择时绝不覆盖
+     * 只负责 Root 模式扫描设备，保留自动选择。
      * ============================================================
      */
 
@@ -464,14 +394,6 @@ private fun KeystrokesTestScreen() {
 
             if (selectedDevicePaths.isNotEmpty()) {
 
-                /*
-                 * 如果设备仍然存在，就继续使用。
-                 *
-                 * 这里不修改 selectedDevicePaths。
-                 */
-
-                autoSelectedDevicePath = null
-
                 return true
             }
 
@@ -493,9 +415,6 @@ private fun KeystrokesTestScreen() {
                         keyboard.eventPath
                     )
 
-                autoSelectedDevicePath =
-                    keyboard.eventPath
-
                 return true
 
             }
@@ -505,9 +424,6 @@ private fun KeystrokesTestScreen() {
              * 自动识别失败
              * ========================================================
              */
-
-            autoSelectedDevicePath =
-                null
 
             status =
                 "未自动识别到设备，请手动选择"
@@ -566,15 +482,6 @@ private fun KeystrokesTestScreen() {
 
             newSelection.remove(eventPath)
 
-            /*
-             * 如果取消的是自动选择的设备，
-             * 那么它就不再属于自动选择状态。
-             */
-
-            if (eventPath == autoSelectedDevicePath) {
-                autoSelectedDevicePath = null
-            }
-
         } else {
 
             /*
@@ -582,15 +489,6 @@ private fun KeystrokesTestScreen() {
              */
 
             newSelection.add(eventPath)
-
-            /*
-             * 用户开始手动修改选择，
-             * 自动选择标记不再作为当前选择依据。
-             */
-
-            if (eventPath != autoSelectedDevicePath) {
-                autoSelectedDevicePath = null
-            }
         }
 
         selectedDevicePaths = newSelection
@@ -670,6 +568,11 @@ private fun KeystrokesTestScreen() {
                     .getService()
                     ?.apply {
 
+                        android.util.Log.i(
+                            "KeyStrokes-Shizuku",
+                            "停止输入监听，但保留 UserService"
+                        )
+
                         setListener(null)
                         stop()
 
@@ -684,7 +587,8 @@ private fun KeystrokesTestScreen() {
                 )
             }
 
-            ShizukuUserServiceManager.stop()
+            // 注意：这里不再调用 ShizukuUserServiceManager.stop()
+            // 只停止监听，不销毁 UserService
         }
 
         /*
@@ -985,48 +889,140 @@ private fun KeystrokesTestScreen() {
 
                                     android.util.Log.i(
                                         "KeyStrokes-Shizuku",
-                                        "发现设备：$device"
+                                        "Shizuku 返回 event：[$device]"
                                     )
                                 }
 
+                                /*
+                                 * ============================================================
+                                 * Shizuku 只负责把 event 列表给 MainActivity
+                                 *
+                                 * 不解析设备名称
+                                 * 不自动选择设备
+                                 *
+                                 * 用户必须自己选择 eventX。
+                                 * ============================================================
+                                 */
+
                                 val scannedDevices =
-                                    parseShizukuDevices(rawDevices)
+                                    rawDevices.map { path ->
+
+                                        val eventPath =
+                                            path.trim()
+
+                                        InputDeviceScanner.InputDeviceInfo(
+                                            eventName =
+                                                eventPath.substringAfterLast("/"),
+
+                                            eventPath =
+                                                eventPath,
+
+                                            deviceName =
+                                                "",
+
+                                            isKeyboard =
+                                                false
+                                        )
+                                    }
 
                                 android.util.Log.i(
                                     "KeyStrokes-Shizuku",
-                                    "解析后得到 ${scannedDevices.size} 个设备"
+                                    "转换后得到 ${scannedDevices.size} 个 event"
                                 )
 
                                 mainHandler.post {
 
-                                    devices =
-                                        scannedDevices
+                                    devices = scannedDevices
 
-                                    val keyboard =
-                                        scannedDevices.firstOrNull {
-                                            it.isKeyboard
-                                        }
+                                    if (selectedDevicePaths.isEmpty()) {
 
-                                    selectedDevicePaths =
-                                        if (keyboard != null) {
-                                            setOf(keyboard.eventPath)
-                                        } else {
-                                            emptySet()
-                                        }
+                                        status =
+                                            if (scannedDevices.isNotEmpty()) {
 
-                                    status =
-                                        when {
-                                            keyboard != null ->
-                                                "Shizuku 服务正常，已自动选择键盘"
+                                                "Shizuku 服务正常，请手动选择输入设备"
 
-                                            scannedDevices.isNotEmpty() ->
-                                                "Shizuku 服务正常，但暂时没有识别到键盘"
+                                            } else {
 
-                                            else ->
                                                 "Shizuku 服务正常，但没有找到输入设备"
+                                            }
+
+                                    } else {
+
+                                        status =
+                                            "Shizuku 服务正常，使用当前选择的 ${selectedDevicePaths.size} 个设备"
+                                    }
+
+                                    /*
+                                     * ============================================================
+                                     * 没有选择设备时，不启动监听。
+                                     * ============================================================
+                                     */
+
+                                    if (selectedDevicePaths.isEmpty()) {
+
+                                        isListening = false
+
+                                        return@post
+                                    }
+
+                                    try {
+
+                                        /*
+                                         * 先注册 Listener
+                                         */
+                                        service.setListener(
+                                            shizukuListener
+                                        )
+
+                                        android.util.Log.i(
+                                            "KeyStrokes-Shizuku",
+                                            "已注册 Shizuku 输入 Listener"
+                                        )
+
+                                        /*
+                                         * 再启动真正的输入读取
+                                         */
+                                        val result =
+                                            service.start(
+                                                selectedDevicePaths.toTypedArray()
+                                            )
+
+                                        android.util.Log.i(
+                                            "KeyStrokes-Shizuku",
+                                            "UserService.start() 返回：$result"
+                                        )
+
+                                        if (result == 0) {
+
+                                            status =
+                                                "Shizuku 正常，正在监听 ${selectedDevicePaths.size} 个设备"
+
+                                            isListening = true
+
+                                        } else {
+
+                                            status =
+                                                "Shizuku 监听启动失败，错误码：$result"
+
+                                            isListening = false
                                         }
 
-                                    isListening = false
+                                    } catch (e: Exception) {
+
+                                        android.util.Log.e(
+                                            "KeyStrokes-Shizuku",
+                                            "启动 Shizuku 输入监听失败",
+                                            e
+                                        )
+
+                                        status =
+                                            "Shizuku 监听启动失败：${
+                                                e.message
+                                                    ?: e.javaClass.simpleName
+                                            }"
+
+                                        isListening = false
+                                    }
                                 }
 
                             } catch (e: Exception) {
@@ -1074,7 +1070,6 @@ private fun KeystrokesTestScreen() {
 
                 selectedMode = selectedMode,
                 selectedDevicePaths = selectedDevicePaths,
-                autoSelectedDevicePath = autoSelectedDevicePath,
 
                 onDeviceToggle = { eventPath ->
                     toggleDevice(eventPath)
@@ -1089,7 +1084,19 @@ private fun KeystrokesTestScreen() {
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                     } else {
-                        selectedMode = mode
+                        if (selectedMode != mode) {
+                            selectedMode = mode
+
+                            /*
+                             * 切换 Root / Shizuku 后，
+                             * 清除之前模式的设备选择。
+                             */
+                            selectedDevicePaths =
+                                emptySet()
+
+                            devices =
+                                emptyList()
+                        }
                     }
                 },
 
@@ -1220,8 +1227,6 @@ private fun MainPage(
 
     selectedDevicePaths: Set<String>,
 
-    autoSelectedDevicePath: String?,
-
     onDeviceToggle: (String) -> Unit,
 
     onModeChanged: (InputMode) -> Unit,
@@ -1295,7 +1300,7 @@ private fun MainPage(
                     Text(
 
                         text =
-                            "Keystrokes V1.4.5",
+                            "Keystrokes V1.4.6",
 
                         style =
                             MaterialTheme
@@ -1680,9 +1685,6 @@ private fun MainPage(
                     val isSelected =
                         device.eventPath in selectedDevicePaths
 
-                    val isAutoSelected =
-                        device.eventPath == autoSelectedDevicePath
-
                     Row(
 
                         modifier =
@@ -1716,18 +1718,7 @@ private fun MainPage(
                         Text(
 
                             text =
-                                "${device.eventPath} | " +
-                                        "${device.deviceName}" +
-                                        if (device.isKeyboard) {
-                                            " | 键盘"
-                                        } else {
-                                            " | 非键盘"
-                                        } +
-                                        if (isAutoSelected) {
-                                            " (自动选择)"
-                                        } else {
-                                            ""
-                                        },
+                                device.eventPath,
 
                             style =
                                 MaterialTheme.typography.bodyMedium,
@@ -2273,8 +2264,7 @@ private fun AboutPage(
             ) {
 
                 TextButton(
-                    onClick = onBack
-                ) {
+                    onClick = onBack                ) {
 
                     Text(
                         "返回"
@@ -2329,7 +2319,7 @@ private fun AboutPage(
             Text(
 
                 text =
-                    "V1.4.5",
+                    "V1.4.6",
 
                 style =
                     MaterialTheme
