@@ -68,6 +68,56 @@ object ShizukuUserServiceManager {
 
 
     /**
+     * 让已经启动的 Shizuku UserService 扫描输入设备。
+     *
+     * 注意：
+     * 必须先调用 start() 并成功连接 UserService。
+     */
+    fun scanDevices(): Array<String> {
+
+        val service = getService()
+            ?: throw IllegalStateException(
+                "Shizuku UserService 尚未连接"
+            )
+
+        return try {
+
+            Log.i(
+                TAG,
+                "请求 Shizuku UserService 扫描输入设备"
+            )
+
+            val devices =
+                service.scanDevices()
+
+            Log.i(
+                TAG,
+                "Shizuku UserService 扫描完成，发现 ${devices.size} 个设备"
+            )
+
+            devices.forEach {
+                Log.i(
+                    TAG,
+                    "Shizuku Device: $it"
+                )
+            }
+
+            devices
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "调用 Shizuku UserService.scanDevices() 失败",
+                e
+            )
+
+            emptyArray()
+        }
+    }
+
+
+    /**
      * 检查 Shizuku 是否正在运行。
      */
     fun isShizukuRunning(): Boolean {
@@ -132,11 +182,9 @@ object ShizukuUserServiceManager {
     /**
      * 启动 UserService。
      *
-     * @param eventPaths 要监听的 event 路径列表，例如 arrayOf("/dev/input/event1", "/dev/input/event4")
      * @param onConnected 连接成功回调，参数为 IBinder
      */
     fun start(
-        eventPaths: Array<String> = emptyArray(),
         onConnected: ((IBinder) -> Unit)? = null
     ) {
 
@@ -207,13 +255,6 @@ object ShizukuUserServiceManager {
                     serviceBinder = service
 
                     if (service != null) {
-                        // 启动后调用 start 传入 eventPaths
-                        try {
-                            val inputService = IShizukuInputService.Stub.asInterface(service)
-                            inputService?.start(eventPaths)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "调用 UserService.start() 失败", e)
-                        }
                         onConnected?.invoke(service)
                     }
                 }

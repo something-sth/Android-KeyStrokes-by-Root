@@ -197,6 +197,65 @@ private enum class AppPage {
 
 /*
  * ============================================================
+ * 解析 Shizuku 扫描结果
+ * ============================================================
+ */
+
+private fun parseShizukuDevices(
+    rawDevices: Array<String>
+): List<InputDeviceScanner.InputDeviceInfo> {
+
+    return rawDevices.mapNotNull { line ->
+
+        val parts =
+            line.split("|", limit = 2)
+
+        if (parts.isEmpty()) {
+            return@mapNotNull null
+        }
+
+        val eventPath =
+            parts[0].trim()
+
+        if (!eventPath.matches(
+                Regex("/dev/input/event\\d+")
+            )
+        ) {
+            return@mapNotNull null
+        }
+
+        val eventName =
+            eventPath.substringAfterLast("/")
+
+        val deviceName =
+            if (parts.size >= 2) {
+                parts[1]
+                    .trim()
+                    .ifEmpty { "(unknown)" }
+            } else {
+                "(unknown)"
+            }
+
+        val lower =
+            deviceName.lowercase()
+
+        val isKeyboard =
+            lower.contains("keyboard") ||
+                    lower.contains("keypad") ||
+                    lower.contains("kbd")
+
+        InputDeviceScanner.InputDeviceInfo(
+            eventName = eventName,
+            eventPath = eventPath,
+            deviceName = deviceName,
+            isKeyboard = isKeyboard
+        )
+    }
+}
+
+
+/*
+ * ============================================================
  * 主界面
  * ============================================================
  */
@@ -206,7 +265,7 @@ private fun KeystrokesTestScreen() {
 
     val context = LocalContext.current
 
-    val executor = remember {
+    var executor = remember {
         Executors.newSingleThreadExecutor()
     }
 
@@ -216,6 +275,12 @@ private fun KeystrokesTestScreen() {
 
     val mainHandler = remember {
         Handler(Looper.getMainLooper())
+    }
+
+    fun ensureExecutor() {
+        if (executor.isShutdown || executor.isTerminated) {
+            executor = Executors.newSingleThreadExecutor()
+        }
     }
 
 
@@ -835,42 +900,28 @@ private fun KeystrokesTestScreen() {
 
             InputMode.SHIZUKU -> {
 
+                android.util.Log.i(
+                    "KeyStrokes-Shizuku",
+                    "进入 Shizuku 开始监听流程"
+                )
+
                 status =
-                    "正在扫描输入设备..."
-
-                /*
-                 * ========================================================
-                 * 第三处：Shizuku 同样使用统一设备扫描逻辑
-                 * ========================================================
-                 */
-
-                if (!scanInputDevices()) {
-
-                    isListening = false
-
-                    return
-                }
-
-                if (selectedDevicePaths.isEmpty()) {
-
-                    status =
-                        "请先选择要监听的输入设备"
-
-                    isListening = false
-
-                    return
-                }
+                    "正在启动 Shizuku 服务..."
 
                 if (
                     !ShizukuUserServiceManager
                         .isShizukuRunning()
                 ) {
 
+                    android.util.Log.e(
+                        "KeyStrokes-Shizuku",
+                        "Shizuku 未运行"
+                    )
+
                     status =
                         "Shizuku 未运行"
 
-                    isListening =
-                        false
+                    isListening = false
 
                     return
                 }
@@ -880,124 +931,122 @@ private fun KeystrokesTestScreen() {
                         .hasPermission()
                 ) {
 
+                    android.util.Log.e(
+                        "KeyStrokes-Shizuku",
+                        "Shizuku 未授权"
+                    )
+
                     status =
                         "Shizuku 未授权"
 
-                    isListening =
-                        false
+                    isListening = false
 
                     return
                 }
 
-                /*
-                 * =====================================================
-                 * 传入 selectedDevicePaths
-                 * =====================================================
-                 */
+                android.util.Log.i(
+                    "KeyStrokes-Shizuku",
+                    "Shizuku 正常，准备启动 UserService"
+                )
 
                 ShizukuUserServiceManager.start(
-                    eventPaths = selectedDevicePaths.toTypedArray(),
                     onConnected = { binder ->
 
-                        try {
+                        android.util.Log.i(
+                            "KeyStrokes-Shizuku",
+                            "Shizuku UserService 已连接"
+                        )
 
-                            val service =
-                                IShizukuInputService
-                                    .Stub
-                                    .asInterface(
-                                        binder
+                        ensureExecutor()
+
+                        executor.submit {
+
+                            try {
+
+                                val service =
+                                    IShizukuInputService
+                                        .Stub
+                                        .asInterface(binder)
+
+                                android.util.Log.i(
+                                    "KeyStrokes-Shizuku",
+                                    "开始请求 UserService 扫描输入设备"
+                                )
+
+                                val rawDevices =
+                                    service.scanDevices()
+
+                                android.util.Log.i(
+                                    "KeyStrokes-Shizuku",
+                                    "UserService 扫描完成，共发现 ${rawDevices.size} 个设备"
+                                )
+
+                                rawDevices.forEach { device ->
+
+                                    android.util.Log.i(
+                                        "KeyStrokes-Shizuku",
+                                        "发现设备：$device"
                                     )
-
-                            /*
-                             * 注册 Listener
-                             */
-
-                            service.setListener(
-                                shizukuListener
-                            )
-
-                            /*
-                             * =================================================
-                             * 启动输入监听
-                             *
-                             * 传入 selectedDevicePaths
-                             * =================================================
-                             */
-
-                            val result =
-                                service.start(selectedDevicePaths.toTypedArray())
-
-                            mainHandler.post {
-
-                                when (result) {
-
-                                    0 -> {
-
-                                        status =
-                                            "Shizuku 模式：正在监听"
-
-                                        isListening = true
-                                    }
-
-                                    1 -> {
-
-                                        status =
-                                            "Shizuku 输入监听已经在运行"
-
-                                        isListening = true
-                                    }
-
-                                    2 -> {
-
-                                        status =
-                                            "Shizuku UID 不正确"
-
-                                        isListening = false
-                                    }
-
-                                    3 -> {
-
-                                        status =
-                                            "Shizuku：没有找到输入设备"
-
-                                        isListening = false
-                                    }
-
-                                    4 -> {
-
-                                        status =
-                                            "Shizuku：输入设备无法打开"
-
-                                        isListening = false
-                                    }
-
-                                    else -> {
-
-                                        status =
-                                            "Shizuku 启动失败：$result"
-
-                                        isListening = false
-                                    }
                                 }
-                            }
 
-                        } catch (e: Exception) {
+                                val scannedDevices =
+                                    parseShizukuDevices(rawDevices)
 
-                            android.util.Log.e(
-                                "KeyStrokes-Shizuku",
-                                "Shizuku 输入监听启动失败",
-                                e
-                            )
+                                android.util.Log.i(
+                                    "KeyStrokes-Shizuku",
+                                    "解析后得到 ${scannedDevices.size} 个设备"
+                                )
 
-                            mainHandler.post {
+                                mainHandler.post {
 
-                                status =
-                                    "Shizuku 启动失败：${
-                                        e.message
-                                            ?: e.javaClass.simpleName
-                                    }"
+                                    devices =
+                                        scannedDevices
 
-                                isListening = false
+                                    val keyboard =
+                                        scannedDevices.firstOrNull {
+                                            it.isKeyboard
+                                        }
+
+                                    selectedDevicePaths =
+                                        if (keyboard != null) {
+                                            setOf(keyboard.eventPath)
+                                        } else {
+                                            emptySet()
+                                        }
+
+                                    status =
+                                        when {
+                                            keyboard != null ->
+                                                "Shizuku 服务正常，已自动选择键盘"
+
+                                            scannedDevices.isNotEmpty() ->
+                                                "Shizuku 服务正常，但暂时没有识别到键盘"
+
+                                            else ->
+                                                "Shizuku 服务正常，但没有找到输入设备"
+                                        }
+
+                                    isListening = false
+                                }
+
+                            } catch (e: Exception) {
+
+                                android.util.Log.e(
+                                    "KeyStrokes-Shizuku",
+                                    "UserService 扫描设备失败",
+                                    e
+                                )
+
+                                mainHandler.post {
+
+                                    status =
+                                        "Shizuku 扫描失败：${
+                                            e.message
+                                                ?: e.javaClass.simpleName
+                                        }"
+
+                                    isListening = false
+                                }
                             }
                         }
                     }
@@ -1246,7 +1295,7 @@ private fun MainPage(
                     Text(
 
                         text =
-                            "Keystrokes V1.4.4",
+                            "Keystrokes V1.4.5",
 
                         style =
                             MaterialTheme
@@ -2280,7 +2329,7 @@ private fun AboutPage(
             Text(
 
                 text =
-                    "V1.4.4",
+                    "V1.4.5",
 
                 style =
                     MaterialTheme

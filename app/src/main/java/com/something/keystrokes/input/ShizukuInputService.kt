@@ -91,6 +91,82 @@ class ShizukuInputService :
 
     /*
      * =========================================================
+     * 扫描输入设备
+     * =========================================================
+     */
+
+    override fun scanDevices(): Array<String> {
+
+        val uid = Process.myUid()
+
+        Log.i(TAG, "开始由 Shizuku UserService 扫描输入设备，UID = $uid")
+
+        if (uid != 2000) {
+            Log.e(TAG, "扫描失败：UserService UID 不正确：$uid")
+            return emptyArray()
+        }
+
+        return try {
+
+            val process = ProcessBuilder(
+                "/system/bin/sh",
+                "-c",
+                """
+                for f in /dev/input/event*; do
+                    [ -e "${'$'}f" ] || continue
+                    event=${'$'}(basename "${'$'}f")
+                    name1=${'$'}(
+                        cat "/sys/class/input/${'$'}event/device/name" \
+                        2>/dev/null
+                    )
+                    name2=${'$'}(
+                        cat "/sys/class/input/${'$'}event/device/device/name" \
+                        2>/dev/null
+                    )
+                    printf '%s|%s|%s\n' \
+                        "${'$'}f" \
+                        "${'$'}name1" \
+                        "${'$'}name2"
+                done
+                """.trimIndent()
+            )
+                .redirectErrorStream(true)
+                .start()
+
+            val result =
+                process.inputStream
+                    .bufferedReader()
+                    .readLines()
+
+            process.waitFor()
+
+            result
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .forEach {
+                    Log.i(
+                        TAG,
+                        "扫描结果：$it"
+                    )
+                }
+
+            result.toTypedArray()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Shizuku 扫描输入设备失败",
+                e
+            )
+
+            emptyArray()
+        }
+    }
+
+
+    /*
+     * =========================================================
      * 设置事件监听器
      * =========================================================
      */
@@ -540,9 +616,9 @@ class ShizukuInputService :
 
                 Log.e(
                     TAG,
-                    "${eventFile.name} 读取失败："
-                            + "${e.javaClass.simpleName}: "
-                            + e.message,
+                    "${eventFile.name} 读取失败：" +
+                            "${e.javaClass.simpleName}: " +
+                            e.message,
                     e
                 )
             }
