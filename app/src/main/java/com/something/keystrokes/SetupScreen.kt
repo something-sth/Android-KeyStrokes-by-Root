@@ -1,5 +1,6 @@
 package com.something.keystrokes
 
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -18,15 +19,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.FilledTonalButton
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +49,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
+import kotlinx.coroutines.delay
+
 import rikka.shizuku.Shizuku
 
 import java.io.BufferedReader
@@ -47,8 +58,11 @@ import java.io.InputStreamReader
 
 
 private const val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
+private const val ANNOUNCEMENT_VERSION = "1.4.7"
+private const val ANNOUNCEMENT_KEY = "announcement_version"
 
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SetupScreen(
     onEnter: () -> Unit
@@ -56,6 +70,61 @@ fun SetupScreen(
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+
+
+    /*
+     * =========================================================
+     * 公告状态
+     * =========================================================
+     */
+
+    var showAnnouncement by remember {
+        mutableStateOf(false)
+    }
+
+    var announcementCountdown by remember {
+        mutableStateOf(5)
+    }
+
+
+    /*
+     * =========================================================
+     * 检查是否显示公告
+     * =========================================================
+     */
+
+    LaunchedEffect(Unit) {
+
+        val prefs =
+            context.getSharedPreferences(
+                "app_settings",
+                Context.MODE_PRIVATE
+            )
+
+        val lastVersion =
+            prefs.getString(
+                ANNOUNCEMENT_KEY,
+                ""
+            )
+
+        if (
+            lastVersion != ANNOUNCEMENT_VERSION
+        ) {
+
+            showAnnouncement = true
+
+            announcementCountdown = 5
+
+            while (
+                announcementCountdown > 0
+            ) {
+
+                delay(1000)
+
+                announcementCountdown--
+            }
+        }
+    }
 
 
     /*
@@ -70,13 +139,11 @@ fun SetupScreen(
         )
     }
 
-
     var rootStatus by remember {
         mutableStateOf(
             checkRootAccess()
         )
     }
-
 
     var shizukuStatus by remember {
         mutableStateOf(
@@ -89,7 +156,7 @@ fun SetupScreen(
      * =========================================================
      * Shizuku 权限回调
      *
-     * 这里只处理“是否授权”
+     * 这里只处理"是否授权"
      * 不再启动 User Service
      * =========================================================
      */
@@ -97,9 +164,7 @@ fun SetupScreen(
     DisposableEffect(lifecycleOwner) {
 
         val permissionListener =
-            Shizuku.OnRequestPermissionResultListener {
-                    requestCode,
-                    grantResult ->
+            Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
 
                 if (
                     requestCode !=
@@ -107,7 +172,6 @@ fun SetupScreen(
                 ) {
                     return@OnRequestPermissionResultListener
                 }
-
 
                 if (
                     grantResult ==
@@ -200,10 +264,8 @@ fun SetupScreen(
     val rootAvailable =
         rootStatus == "已授权"
 
-
     val shizukuAvailable =
         shizukuStatus == "已授权"
-
 
     val canEnter =
         overlayGranted &&
@@ -219,216 +281,325 @@ fun SetupScreen(
      * =========================================================
      */
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(20.dp),
+    Scaffold(
+        topBar = {
 
-        verticalArrangement =
-            Arrangement.spacedBy(12.dp)
-    ) {
+            TopAppBar(
+                title = {
 
-
-        Text(
-            text = "KeyStrokes",
-            style =
-                MaterialTheme
-                    .typography
-                    .headlineLarge
-        )
-
-
-        Text(
-            text =
-                "请先完成授权，否则软件无法正常工作",
-
-            style =
-                MaterialTheme
-                    .typography
-                    .bodyLarge
-        )
-
-
-        Spacer(
-            modifier =
-                Modifier.height(8.dp)
-        )
-
-
-        /*
-         * =====================================================
-         * 悬浮窗权限
-         * =====================================================
-         */
-
-        PermissionCard(
-            title = "悬浮窗权限",
-
-            description =
-                "用于显示按键悬浮窗",
-
-            status =
-                if (overlayGranted) {
-                    "已授权"
-                } else {
-                    "未授权"
-                },
-
-            required = true,
-
-            buttonText =
-                if (overlayGranted) {
-                    "已授权"
-                } else {
-                    "授权"
-                },
-
-            onClick = {
-
-                if (
-                    !Settings.canDrawOverlays(
-                        context
-                    )
-                ) {
-
-                    val intent =
-                        Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse(
-                                "package:${context.packageName}"
-                            )
-                        )
-
-                    context.startActivity(
-                        intent
+                    Text(
+                        "KeyStrokes"
                     )
                 }
-            }
-        )
+            )
+        }
 
+    ) { padding ->
 
-        /*
-         * =====================================================
-         * Root 权限
-         * =====================================================
-         */
-
-        PermissionCard(
-            title = "Root 权限",
-
-            description =
-                "使用 Root 读取系统输入设备",
-
-            status =
-                rootStatus,
-
-            required = true,
-
-            buttonText =
-                if (rootStatus == "已授权") {
-                    "已授权"
-                } else {
-                    "请授予软件 Root 权限"
-                },
-
-            onClick = {
-
-                rootStatus =
-                    checkRootAccess()
-
-                if (rootStatus != "已授权") {
-
-                    Toast.makeText(
-                        context,
-                        "请在 Root 管理器中授予 KeyStrokes Root 权限",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-        )
-
-
-        /*
-         * =====================================================
-         * Shizuku 权限
-         *
-         * 这里只负责授权。
-         *
-         * 不启动 User Service。
-         * 不读取输入设备。
-         * 不扫描 event。
-         * =====================================================
-         */
-
-        PermissionCard(
-            title = "Shizuku",
-
-            description =
-                "使用 Shizuku 作为 Root 的替代授权方式",
-
-            status =
-                shizukuStatus,
-
-            required = true,
-
-            buttonText =
-                when (shizukuStatus) {
-
-                    "已授权" ->
-                        "已授权"
-
-                    "未运行" ->
-                        "请先启动 Shizuku"
-
-                    else ->
-                        "授权 Shizuku"
-                },
-
-            onClick = {
-
-                requestShizukuPermission(
-                    context = context,
-                    onStatusChange = {
-                        shizukuStatus = it
-                    }
-                )
-            }
-        )
-
-
-        Spacer(
-            modifier =
-                Modifier.height(8.dp)
-        )
-
-
-        /*
-         * =====================================================
-         * 进入软件
-         * =====================================================
-         */
-
-        Button(
-            onClick = onEnter,
-
-            enabled = canEnter,
-
+        Column(
             modifier =
                 Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 16.dp)
+                    .verticalScroll(
+                        rememberScrollState()
+                    ),
+
+            verticalArrangement =
+                Arrangement.spacedBy(12.dp)
+
         ) {
 
             Text(
                 text =
-                    if (canEnter) {
-                        "进入软件"
-                    } else {
-                        "请完成授权"
-                    }
+                    "请先完成授权，否则软件无法正常工作",
+
+                style =
+                    MaterialTheme
+                        .typography
+                        .bodyLarge
             )
+
+
+            /*
+             * =====================================================
+             * 悬浮窗权限
+             * =====================================================
+             */
+
+            PermissionCard(
+                title = "悬浮窗权限",
+
+                description =
+                    "用于显示按键悬浮窗",
+
+                status =
+                    if (overlayGranted) {
+                        "已授权"
+                    } else {
+                        "未授权"
+                    },
+
+                required = true,
+
+                buttonText =
+                    if (overlayGranted) {
+                        "已授权"
+                    } else {
+                        "授权"
+                    },
+
+                onClick = {
+
+                    if (
+                        !Settings.canDrawOverlays(
+                            context
+                        )
+                    ) {
+
+                        val intent =
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse(
+                                    "package:${context.packageName}"
+                                )
+                            )
+
+                        context.startActivity(
+                            intent
+                        )
+                    }
+                }
+            )
+
+
+            /*
+             * =====================================================
+             * Root 权限
+             * =====================================================
+             */
+
+            PermissionCard(
+                title = "Root 权限",
+
+                description =
+                    "使用 Root 读取系统输入设备",
+
+                status =
+                    rootStatus,
+
+                required = true,
+
+                buttonText =
+                    if (rootStatus == "已授权") {
+                        "已授权"
+                    } else {
+                        "请授予软件 Root 权限"
+                    },
+
+                onClick = {
+
+                    rootStatus =
+                        checkRootAccess()
+
+                    if (rootStatus != "已授权") {
+
+                        Toast.makeText(
+                            context,
+                            "请在 Root 管理器中授予 KeyStrokes Root 权限",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            )
+
+
+            /*
+             * =====================================================
+             * Shizuku 权限
+             *
+             * 这里只负责授权。
+             *
+             * 不启动 User Service。
+             * 不读取输入设备。
+             * 不扫描 event。
+             * =====================================================
+             */
+
+            PermissionCard(
+                title = "Shizuku",
+
+                description =
+                    "使用 Shizuku 作为 Root 的替代授权方式",
+
+                status =
+                    shizukuStatus,
+
+                required = true,
+
+                buttonText =
+                    when (shizukuStatus) {
+
+                        "已授权" ->
+                            "已授权"
+
+                        "未运行" ->
+                            "请先启动 Shizuku"
+
+                        else ->
+                            "授权 Shizuku"
+                    },
+
+                onClick = {
+
+                    requestShizukuPermission(
+                        context = context,
+                        onStatusChange = {
+                            shizukuStatus = it
+                        }
+                    )
+                }
+            )
+
+
+            Spacer(
+                modifier =
+                    Modifier.height(8.dp)
+            )
+
+
+            /*
+             * =====================================================
+             * 进入软件
+             * =====================================================
+             */
+
+            Button(
+                onClick = onEnter,
+
+                enabled = canEnter,
+
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+
+                shape =
+                    MaterialTheme.shapes.large
+
+            ) {
+
+                Text(
+                    text =
+                        if (canEnter) {
+                            "进入软件"
+                        } else {
+                            "请完成授权"
+                        }
+                )
+            }
         }
+    }
+
+
+    /*
+     * =========================================================
+     * 公告弹窗
+     * =========================================================
+     */
+
+    if (showAnnouncement) {
+
+        AlertDialog(
+            onDismissRequest = {},
+
+            title = {
+                Text(
+                    text =
+                        "KeyStrokes V${ANNOUNCEMENT_VERSION} 更新公告"
+                )
+            },
+
+            text = {
+
+                Column(
+                    modifier =
+                        Modifier
+                            .verticalScroll(
+                                rememberScrollState()
+                            )
+                            .padding(8.dp)
+                ) {
+
+                    Text(
+                        text =
+                            "本版本更新：\n\n" +
+                                    "• 添加 Shizuku 自动选择方案\n" +
+                                    "• 优化了软件界面UI\n" +
+                                    "• 减少了 Shizuku 模式启动报错的情况\n\n" +
+                                    "使用说明：\n" +
+                                    "Root 模式稳定性最强，不容易报错，自动选择逻辑较完善。\n" +
+                                    "Shizuku 模式的自动选择会默认跳过系统 event 设备，\n" +
+                                    "优先选择外接输入设备。\n\n" +
+                                    "如果自动选择失败，\n" +
+                                    "可以手动选择设备。\n\n" +
+                                    "GitHub开源仓库：\n" +
+                                    "https://github.com/something-sth/Sth-Android-KeyStrokes\n\n" +
+                                    "QQ交流反馈群：\n" +
+                                    "908887474\n\n" +
+                                    "本项目免费开源。\n" +
+                                    "请勿进行未经授权的收费售卖。"
+                    )
+
+                }
+            },
+
+            confirmButton = {
+
+                TextButton(
+
+                    onClick = {
+
+                        if (
+                            announcementCountdown == 0
+                        ) {
+
+                            context
+                                .getSharedPreferences(
+                                    "app_settings",
+                                    Context.MODE_PRIVATE
+                                )
+                                .edit()
+                                .putString(
+                                    ANNOUNCEMENT_KEY,
+                                    ANNOUNCEMENT_VERSION
+                                )
+                                .apply()
+
+                            showAnnouncement = false
+                        }
+                    },
+
+                    enabled =
+                        announcementCountdown == 0
+                ) {
+
+                    Text(
+                        if (
+                            announcementCountdown > 0
+                        ) {
+
+                            "确定(${announcementCountdown})"
+
+                        } else {
+
+                            "确定"
+                        }
+                    )
+                }
+            }
+        )
     }
 }
 
@@ -672,7 +843,10 @@ private fun PermissionCard(
 
     Card(
         modifier =
-            Modifier.fillMaxWidth()
+            Modifier.fillMaxWidth(),
+
+        shape =
+            MaterialTheme.shapes.large
     ) {
 
         Column(
@@ -738,19 +912,35 @@ private fun PermissionCard(
             )
 
 
-            Button(
-                onClick = onClick,
+            if (status == "已授权") {
 
-                enabled =
-                    status != "已授权",
+                FilledTonalButton(
+                    onClick = {},
 
-                modifier =
-                    Modifier.fillMaxWidth()
-            ) {
+                    enabled = false,
 
-                Text(
-                    text = buttonText
-                )
+                    modifier =
+                        Modifier.fillMaxWidth()
+                ) {
+
+                    Text(
+                        text = buttonText
+                    )
+                }
+
+            } else {
+
+                Button(
+                    onClick = onClick,
+
+                    modifier =
+                        Modifier.fillMaxWidth()
+                ) {
+
+                    Text(
+                        text = buttonText
+                    )
+                }
             }
         }
     }
