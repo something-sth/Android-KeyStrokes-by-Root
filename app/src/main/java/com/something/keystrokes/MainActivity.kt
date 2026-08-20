@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -116,14 +117,12 @@ private enum class InputMode {
 
 /*
  * ============================================================
- * Shizuku 自动选择策略
+ * 自动选择策略
  *
- * Shizuku shell 权限无法读取完整设备名称，
- * 默认跳过系统 event0-event6，
- * 将 event7 及之后设备作为外部输入设备候选。
+ * 统一使用 event >= 7 作为外部输入设备的判断标准。
  * ============================================================
  */
-private const val SHIZUKU_AUTO_SELECT_START_EVENT = 7
+private const val AUTO_SELECT_START_EVENT = 7
 
 /*
  * ============================================================
@@ -196,6 +195,18 @@ private fun checkShizukuAuthorized(): Boolean {
         false
 
     }
+}
+
+/*
+ * ============================================================
+ * 获取 event 编号（工具函数）
+ * ============================================================
+ */
+
+private fun getEventNumber(device: InputDeviceScanner.InputDeviceInfo): Int? {
+    return device.eventPath
+        .substringAfterLast("event")
+        .toIntOrNull()
 }
 
 /*
@@ -389,6 +400,7 @@ private fun KeystrokesTestScreen() {
      * Root 专用扫描函数
      *
      * 只负责 Root 模式扫描设备，保留自动选择。
+     * 自动选择策略：event >= 7
      * ============================================================
      */
 
@@ -425,22 +437,28 @@ private fun KeystrokesTestScreen() {
              * ========================================================
              * 当前没有设备选择
              *
-             * 尝试自动选择键盘。
+             * 尝试自动选择 event >= 7 的设备。
              * ========================================================
              */
 
-            val keyboard =
-                result.keyboard
+            val autoDevices =
+                result.devices.filter { device ->
+                    getEventNumber(device)?.let { it >= AUTO_SELECT_START_EVENT } ?: false
+                }
 
-            if (keyboard != null) {
+            if (autoDevices.isNotEmpty()) {
 
                 selectedDevicePaths =
-                    setOf(
-                        keyboard.eventPath
-                    )
+                    autoDevices
+                        .map {
+                            it.eventPath
+                        }
+                        .toSet()
+
+                autoSelectedDevicePaths =
+                    selectedDevicePaths
 
                 return true
-
             }
 
             /*
@@ -489,14 +507,7 @@ private fun KeystrokesTestScreen() {
 
         val autoDevices =
             scannedDevices.filter { device ->
-
-                val eventNumber =
-                    device.eventPath
-                        .substringAfterLast("event")
-                        .toIntOrNull()
-                        ?: return@filter false
-
-                eventNumber >= SHIZUKU_AUTO_SELECT_START_EVENT
+                getEventNumber(device)?.let { it >= AUTO_SELECT_START_EVENT } ?: false
             }
 
         autoSelectedDevicePaths =
@@ -783,6 +794,17 @@ private fun KeystrokesTestScreen() {
                             val onEvent: (KeyEventData) -> Unit = { event ->
 
                                 /*
+                                 * 鼠标事件调试日志
+                                 */
+                                if (event.code == RootInputReader.BTN_LEFT ||
+                                    event.code == RootInputReader.BTN_RIGHT) {
+                                    Log.d(
+                                        "Mouse",
+                                        "${event.keyName} ${if (event.down) "DOWN" else "UP"}"
+                                    )
+                                }
+
+                                /*
                                  * 更新按键状态
                                  */
 
@@ -1001,7 +1023,7 @@ private fun KeystrokesTestScreen() {
                                             eventName =
                                                 if (
                                                     eventNumber != null &&
-                                                    eventNumber >= SHIZUKU_AUTO_SELECT_START_EVENT
+                                                    eventNumber >= AUTO_SELECT_START_EVENT
                                                 ) {
 
                                                     "$eventName（自动选择）"
@@ -1015,12 +1037,15 @@ private fun KeystrokesTestScreen() {
                                                 eventPath,
 
                                             deviceName =
-                                                "",
-
-                                            isKeyboard =
-                                                false
+                                                ""
                                         )
                                     }
+                                        // 按 event 编号数字排序
+                                        .sortedBy {
+                                            it.eventPath
+                                                .substringAfter("event")
+                                                .toIntOrNull() ?: Int.MAX_VALUE
+                                        }
 
                                 android.util.Log.i(
                                     "KeyStrokes-Shizuku",
@@ -1248,6 +1273,7 @@ private fun KeystrokesTestScreen() {
 
                         selectedMode = selectedMode,
                         selectedDevicePaths = selectedDevicePaths,
+                        autoSelectedDevicePaths = autoSelectedDevicePaths,
 
                         onDeviceToggle = { eventPath ->
                             toggleDevice(eventPath)
@@ -1386,6 +1412,8 @@ private fun MainPage(
 
     selectedDevicePaths: Set<String>,
 
+    autoSelectedDevicePaths: Set<String>,
+
     onDeviceToggle: (String) -> Unit,
 
     onModeChanged: (InputMode) -> Unit,
@@ -1428,7 +1456,7 @@ private fun MainPage(
         Text(
 
             text =
-                "KeyStrokes V1.4.7",
+                "KeyStrokes V1.4.8",
 
             style =
                 MaterialTheme
@@ -1808,15 +1836,12 @@ private fun MainPage(
 
                     Text(
 
-                        text =
-                            device.eventPath +
-                                    if (
-                                        device.eventName.contains("自动选择")
-                                    ) {
-                                        "（自动选择）"
-                                    } else {
-                                        ""
-                                    },
+                        text = buildString {
+                            append(device.eventPath)
+                            if (device.eventPath in autoSelectedDevicePaths) {
+                                append(" (自动选择)")
+                            }
+                        },
 
                         style =
                             MaterialTheme.typography.bodyMedium,
@@ -2353,7 +2378,7 @@ private fun AboutPage(
         Text(
 
             text =
-                "V1.4.7",
+                "V1.4.8",
 
             style =
                 MaterialTheme
@@ -2446,6 +2471,32 @@ private fun AboutPage(
 
             Text(
                 "开源许可证 MIT License"
+            )
+
+        }
+
+        Button(
+
+            onClick = {
+
+                val intent = Intent(
+                    Intent.ACTION_VIEW,
+                    android.net.Uri.parse(
+                        "https://qun.qq.com/universal-share/share?ac=1&authKey=TAcvzxnpxvtKzwgk%2Ba%2Br7WtZ5Mj63H3jNtzCLY9oy352oBj2mu5EFu2UYrGG2MbR&busi_data=eyJncm91cENvZGUiOiI5MDg4ODc0NzQiLCJ0b2tlbiI6IlVXOWloN3l2eGpQVksrTSsySnZiWi84MXFsN2xhMXVxVUZ4K0xLd3hnRU5yanRpd29rMzB6MmtIeER2L1lwZk4iLCJ1aW4iOiIyNzUxODA5MjM3In0%3D&data=Xt1S3wTDGgqTCNJq8LaH9gg5UE1zg87Uw3a0VawgciuMnwuReiG1Hx-z_UX7X9i2MFP4w7OyNlwf2rVKURr7Zw&svctype=4&tempid=h5_group_info"
+                    )
+                )
+
+                context.startActivity(intent)
+
+            },
+
+            modifier =
+                Modifier.fillMaxWidth()
+
+        ) {
+
+            Text(
+                "加入 QQ 交流反馈群"
             )
 
         }

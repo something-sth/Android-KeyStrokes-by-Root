@@ -40,11 +40,6 @@ class RootInputReader(
 
     private fun readLoop() {
         try {
-            // Android/Linux 的 input_event 在 64 位设备上通常为：
-            // timeval(16 bytes) + type(2) + code(2) + value(4) = 24 bytes。
-            //
-            // 为了避免直接依赖 Java FileInputStream 的权限行为，
-            // 这里通过 su 打开设备节点。
             val command = arrayOf(
                 "su", "-c",
                 "cat ${shellQuote(eventPath)}"
@@ -91,21 +86,15 @@ class RootInputReader(
     private fun parseEvent(buffer: ByteArray) {
         val bb = ByteBuffer.wrap(buffer).order(ByteOrder.LITTLE_ENDIAN)
 
-        // timeval：tv_sec + tv_usec，各 8 bytes
         val seconds = bb.long
-        bb.long // microseconds，V0.1 不使用
+        bb.long
 
         val type = bb.short.toInt() and 0xFFFF
         val code = bb.short.toInt() and 0xFFFF
         val value = bb.int
 
-        // EV_KEY = 0x01
         if (type != 0x01) return
 
-        // value:
-        // 0 = UP
-        // 1 = DOWN
-        // 2 = REPEAT
         if (value != 0 && value != 1) return
 
         val keyName = linuxKeyName(code)
@@ -131,6 +120,9 @@ class RootInputReader(
     }
 
     companion object {
+        const val BTN_LEFT = 272
+        const val BTN_RIGHT = 273
+
         private val KEY_NAMES = mapOf(
             1 to "KEY_ESC",
             2 to "KEY_1",
@@ -229,14 +221,11 @@ class RootInputReader(
             108 to "KEY_DOWN",
             109 to "KEY_PAGEDOWN",
             110 to "KEY_INSERT",
-            111 to "KEY_DELETE"
+            111 to "KEY_DELETE",
+            272 to "BTN_LEFT",
+            273 to "BTN_RIGHT"
         )
 
-        /**
-         * 通过 Root 获取当前 UID
-         *
-         * @return UID，如果失败返回 -1
-         */
         fun getUid(): Int {
             return try {
                 val process = Runtime.getRuntime().exec(

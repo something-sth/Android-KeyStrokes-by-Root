@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 
@@ -12,6 +13,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +23,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.withStyle
+
+import androidx.compose.foundation.text.ClickableText
 
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -43,6 +48,11 @@ import androidx.compose.runtime.setValue
 
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 
 import androidx.lifecycle.Lifecycle
@@ -58,7 +68,7 @@ import java.io.InputStreamReader
 
 
 private const val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
-private const val ANNOUNCEMENT_VERSION = "1.4.7"
+private const val ANNOUNCEMENT_VERSION = "1.4.8"
 private const val ANNOUNCEMENT_KEY = "announcement_version"
 
 
@@ -136,6 +146,12 @@ fun SetupScreen(
     var overlayGranted by remember {
         mutableStateOf(
             Settings.canDrawOverlays(context)
+        )
+    }
+
+    var batteryOptimizationIgnored by remember {
+        mutableStateOf(
+            isIgnoringBatteryOptimization(context)
         )
     }
 
@@ -221,6 +237,9 @@ fun SetupScreen(
                     overlayGranted =
                         Settings.canDrawOverlays(context)
 
+                    batteryOptimizationIgnored =
+                        isIgnoringBatteryOptimization(context)
+
                     rootStatus =
                         checkRootAccess()
 
@@ -254,8 +273,8 @@ fun SetupScreen(
      *
      * 三种情况：
      *
-     * 1. Root + 悬浮窗
-     * 2. Shizuku + 悬浮窗
+     * 1. Root + 悬浮窗 + 电池优化
+     * 2. Shizuku + 悬浮窗 + 电池优化
      *
      * 任意一种满足即可进入。
      * =========================================================
@@ -269,6 +288,7 @@ fun SetupScreen(
 
     val canEnter =
         overlayGranted &&
+                batteryOptimizationIgnored &&
                 (
                         rootAvailable ||
                                 shizukuAvailable
@@ -313,7 +333,7 @@ fun SetupScreen(
 
             Text(
                 text =
-                    "请先完成授权，否则软件无法正常工作",
+                    "请先完成授权，否则软件无法正常工作\n悬浮窗与忽略电池优化必须授权，Root 与 Shizuku 授权二选一即可",
 
                 style =
                     MaterialTheme
@@ -324,143 +344,208 @@ fun SetupScreen(
 
             /*
              * =====================================================
-             * 悬浮窗权限
+             * 第一行：悬浮窗 + 电池优化
              * =====================================================
              */
 
-            PermissionCard(
-                title = "悬浮窗权限",
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
 
-                description =
-                    "用于显示按键悬浮窗",
+                Box(
+                    modifier = Modifier.weight(1f)
+                ) {
 
-                status =
-                    if (overlayGranted) {
-                        "已授权"
-                    } else {
-                        "未授权"
-                    },
+                    PermissionCard(
+                        title = "悬浮窗",
 
-                required = true,
+                        description =
+                            "显示按键悬浮窗",
 
-                buttonText =
-                    if (overlayGranted) {
-                        "已授权"
-                    } else {
-                        "授权"
-                    },
+                        status =
+                            if (overlayGranted) {
+                                "已授权"
+                            } else {
+                                "未授权"
+                            },
 
-                onClick = {
+                        required = true,
 
-                    if (
-                        !Settings.canDrawOverlays(
-                            context
-                        )
-                    ) {
+                        buttonText =
+                            if (overlayGranted) {
+                                "已授权"
+                            } else {
+                                "授权"
+                            },
 
-                        val intent =
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse(
-                                    "package:${context.packageName}"
+                        onClick = {
+
+                            if (
+                                !Settings.canDrawOverlays(
+                                    context
                                 )
-                            )
+                            ) {
 
-                        context.startActivity(
-                            intent
-                        )
-                    }
-                }
-            )
+                                val intent =
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse(
+                                            "package:${context.packageName}"
+                                        )
+                                    )
 
-
-            /*
-             * =====================================================
-             * Root 权限
-             * =====================================================
-             */
-
-            PermissionCard(
-                title = "Root 权限",
-
-                description =
-                    "使用 Root 读取系统输入设备",
-
-                status =
-                    rootStatus,
-
-                required = true,
-
-                buttonText =
-                    if (rootStatus == "已授权") {
-                        "已授权"
-                    } else {
-                        "请授予软件 Root 权限"
-                    },
-
-                onClick = {
-
-                    rootStatus =
-                        checkRootAccess()
-
-                    if (rootStatus != "已授权") {
-
-                        Toast.makeText(
-                            context,
-                            "请在 Root 管理器中授予 KeyStrokes Root 权限",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                }
-            )
-
-
-            /*
-             * =====================================================
-             * Shizuku 权限
-             *
-             * 这里只负责授权。
-             *
-             * 不启动 User Service。
-             * 不读取输入设备。
-             * 不扫描 event。
-             * =====================================================
-             */
-
-            PermissionCard(
-                title = "Shizuku",
-
-                description =
-                    "使用 Shizuku 作为 Root 的替代授权方式",
-
-                status =
-                    shizukuStatus,
-
-                required = true,
-
-                buttonText =
-                    when (shizukuStatus) {
-
-                        "已授权" ->
-                            "已授权"
-
-                        "未运行" ->
-                            "请先启动 Shizuku"
-
-                        else ->
-                            "授权 Shizuku"
-                    },
-
-                onClick = {
-
-                    requestShizukuPermission(
-                        context = context,
-                        onStatusChange = {
-                            shizukuStatus = it
+                                context.startActivity(
+                                    intent
+                                )
+                            }
                         }
                     )
                 }
-            )
+
+                Box(
+                    modifier = Modifier.weight(1f)
+                ) {
+
+                    PermissionCard(
+                        title = "电池优化",
+
+                        description =
+                            "后台持续运行",
+
+                        status =
+                            if (batteryOptimizationIgnored) {
+                                "已授权"
+                            } else {
+                                "未授权"
+                            },
+
+                        required = true,
+
+                        buttonText =
+                            if (batteryOptimizationIgnored) {
+                                "已授权"
+                            } else {
+                                "授权"
+                            },
+
+                        onClick = {
+
+                            try {
+
+                                val intent = Intent(
+                                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    Uri.parse(
+                                        "package:${context.packageName}"
+                                    )
+                                )
+
+                                context.startActivity(intent)
+
+                            } catch (e: Exception) {
+
+                                Toast.makeText(
+                                    context,
+                                    "请在系统设置中手动开启忽略电池优化",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    )
+                }
+            }
+
+
+            /*
+             * =====================================================
+             * 第二行：Root + Shizuku
+             * =====================================================
+             */
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+
+                Box(
+                    modifier = Modifier.weight(1f)
+                ) {
+
+                    PermissionCard(
+                        title = "Root",
+
+                        description =
+                            "Root读取输入设备",
+
+                        status =
+                            rootStatus,
+
+                        required = true,
+
+                        buttonText =
+                            if (rootStatus == "已授权") {
+                                "已授权"
+                            } else {
+                                "授权"
+                            },
+
+                        onClick = {
+
+                            rootStatus =
+                                checkRootAccess()
+
+                            if (rootStatus != "已授权") {
+
+                                Toast.makeText(
+                                    context,
+                                    "请在 Root 管理器中授予 KeyStrokes Root 权限",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    )
+                }
+
+                Box(
+                    modifier = Modifier.weight(1f)
+                ) {
+
+                    PermissionCard(
+                        title = "Shizuku",
+
+                        description =
+                            "Root替代方案",
+
+                        status =
+                            shizukuStatus,
+
+                        required = true,
+
+                        buttonText =
+                            when (shizukuStatus) {
+
+                                "已授权" ->
+                                    "已授权"
+
+                                "未运行" ->
+                                    "授权"
+
+                                else ->
+                                    "授权"
+                            },
+
+                        onClick = {
+
+                            requestShizukuPermission(
+                                context = context,
+                                onStatusChange = {
+                                    shizukuStatus = it
+                                }
+                            )
+                        }
+                    )
+                }
+            }
 
 
             Spacer(
@@ -532,26 +617,100 @@ fun SetupScreen(
                             .padding(8.dp)
                 ) {
 
-                    Text(
-                        text =
+                    val annotatedText = buildAnnotatedString {
+
+                        append(
                             "本版本更新：\n\n" +
-                                    "• 添加 Shizuku 自动选择方案\n" +
-                                    "• 优化了软件界面UI\n" +
-                                    "• 减少了 Shizuku 模式启动报错的情况\n\n" +
+                                    "• 将 Root 模式的自动选择逻辑同步 Shizuku 模式\n" +
+                                    "• 优化了权限授权页的 UI 设计，并添加忽略电池优化的授权卡片\n" +
+                                    "• 在关于页面新增加入 QQ 交流反馈群按钮\n" +
+                                    "• 提前在 Root 模式引入鼠标监听逻辑，但尚未真正启用，仅显示在 logcat 层面\n\n" +
                                     "使用说明：\n" +
-                                    "Root 模式稳定性最强，不容易报错，自动选择逻辑较完善。\n" +
-                                    "Shizuku 模式的自动选择会默认跳过系统 event 设备，\n" +
-                                    "优先选择外接输入设备。\n\n" +
-                                    "如果自动选择失败，\n" +
-                                    "可以手动选择设备。\n\n" +
-                                    "GitHub开源仓库：\n" +
-                                    "https://github.com/something-sth/Sth-Android-KeyStrokes\n\n" +
-                                    "QQ交流反馈群：\n" +
-                                    "908887474\n\n" +
+                                    "Root 模式稳定性最强，不容易报错，Shizuku 模式经过持续优化稳定性也提升了许多\n" +
+                                    "自动选择逻辑会固定排除 event0 到 event6，若发现监听没反应，请手动选择 event6 等更靠前的设备\n\n" +
+                                    "若发现软件存在 bug 请第一时间联系我们，我们会尽快处理\n\n"
+                        )
+
+                        pushStringAnnotation(
+                            tag = "github",
+                            annotation = "https://github.com/something-sth/Sth-Android-KeyStrokes"
+                        )
+
+                        withStyle(
+                            SpanStyle(
+                                fontWeight = FontWeight.Bold,
+                                textDecoration = TextDecoration.Underline
+                            )
+                        ) {
+                            append(
+                                "GitHub开源仓库：\n" +
+                                        "https://github.com/something-sth/Sth-Android-KeyStrokes"
+                            )
+                        }
+
+                        pop()
+
+                        append("\n\n")
+
+                        pushStringAnnotation(
+                            tag = "qq",
+                            annotation = "https://qun.qq.com/universal-share/share?ac=1&authKey=TAcvzxnpxvtKzwgk%2Ba%2Br7WtZ5Mj63H3jNtzCLY9oy352oBj2mu5EFu2UYrGG2MbR&busi_data=eyJncm91cENvZGUiOiI5MDg4ODc0NzQiLCJ0b2tlbiI6IlVXOWloN3l2eGpQVksrTSsySnZiWi84MXFsN2xhMXVxVUZ4K0xLd3hnRU5yanRpd29rMzB6MmtIeER2L1lwZk4iLCJ1aW4iOiIyNzUxODA5MjM3In0%3D&data=Xt1S3wTDGgqTCNJq8LaH9gg5UE1zg87Uw3a0VawgciuMnwuReiG1Hx-z_UX7X9i2MFP4w7OyNlwf2rVKURr7Zw&svctype=4&tempid=h5_group_info"
+                        )
+
+                        withStyle(
+                            SpanStyle(
+                                fontWeight = FontWeight.Bold,
+                                textDecoration = TextDecoration.Underline
+                            )
+                        ) {
+                            append(
+                                "QQ交流反馈群：\n" +
+                                        "908887474"
+                            )
+                        }
+
+                        pop()
+
+                        append(
+                            "\n\n" +
                                     "本项目免费开源。\n" +
                                     "请勿进行未经授权的收费售卖。"
-                    )
+                        )
+                    }
 
+                    ClickableText(
+                        text = annotatedText,
+                        onClick = { offset ->
+
+                            annotatedText.getStringAnnotations(
+                                tag = "github",
+                                start = offset,
+                                end = offset
+                            ).firstOrNull()?.let {
+
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse(it.item)
+                                )
+
+                                context.startActivity(intent)
+                            }
+
+                            annotatedText.getStringAnnotations(
+                                tag = "qq",
+                                start = offset,
+                                end = offset
+                            ).firstOrNull()?.let {
+
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse(it.item)
+                                )
+
+                                context.startActivity(intent)
+                            }
+                        }
+                    )
                 }
             },
 
@@ -827,6 +986,34 @@ private fun checkRootAccess(): String {
 
 /*
  * =============================================================
+ * 检测是否忽略电池优化
+ * =============================================================
+ */
+
+private fun isIgnoringBatteryOptimization(
+    context: Context
+): Boolean {
+
+    return try {
+
+        val powerManager =
+            context.getSystemService(
+                Context.POWER_SERVICE
+            ) as PowerManager
+
+        powerManager.isIgnoringBatteryOptimizations(
+            context.packageName
+        )
+
+    } catch (e: Exception) {
+
+        false
+    }
+}
+
+
+/*
+ * =============================================================
  * 权限卡片
  * =============================================================
  */
@@ -851,10 +1038,10 @@ private fun PermissionCard(
 
         Column(
             modifier =
-                Modifier.padding(16.dp),
+                Modifier.padding(12.dp),
 
             verticalArrangement =
-                Arrangement.spacedBy(6.dp)
+                Arrangement.spacedBy(4.dp)
         ) {
 
 
@@ -872,23 +1059,10 @@ private fun PermissionCard(
                     style =
                         MaterialTheme
                             .typography
-                            .titleMedium
+                            .titleSmall
                 )
 
 
-                Text(
-                    text =
-                        if (required) {
-                            "必须"
-                        } else {
-                            "可选"
-                        },
-
-                    style =
-                        MaterialTheme
-                            .typography
-                            .bodySmall
-                )
             }
 
 
@@ -898,7 +1072,7 @@ private fun PermissionCard(
                 style =
                     MaterialTheme
                         .typography
-                        .bodyMedium
+                        .bodySmall
             )
 
 
@@ -908,7 +1082,7 @@ private fun PermissionCard(
                 style =
                     MaterialTheme
                         .typography
-                        .bodyMedium
+                        .bodySmall
             )
 
 
@@ -920,7 +1094,9 @@ private fun PermissionCard(
                     enabled = false,
 
                     modifier =
-                        Modifier.fillMaxWidth()
+                        Modifier
+                            .fillMaxWidth()
+                            .height(36.dp)
                 ) {
 
                     Text(
@@ -934,7 +1110,9 @@ private fun PermissionCard(
                     onClick = onClick,
 
                     modifier =
-                        Modifier.fillMaxWidth()
+                        Modifier
+                            .fillMaxWidth()
+                            .height(36.dp)
                 ) {
 
                     Text(
