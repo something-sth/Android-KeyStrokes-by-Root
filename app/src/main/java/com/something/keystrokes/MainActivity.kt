@@ -1456,7 +1456,7 @@ private fun MainPage(
         Text(
 
             text =
-                "KeyStrokes V1.4.8",
+                "KeyStrokes V1.5",
 
             style =
                 MaterialTheme
@@ -1857,130 +1857,32 @@ private fun MainPage(
 
 
             /*
-             * 按键显示
+             * =================================================
+             * 按键状态（文字外显）
+             * =================================================
              */
 
             item {
 
-                Column(
+                Text(
 
-                    horizontalAlignment =
-                        Alignment.CenterHorizontally,
+                    text =
+                        "按键状态",
+
+                    style =
+                        MaterialTheme
+                            .typography
+                            .titleMedium,
 
                     modifier =
-                        Modifier.fillMaxWidth()
-
-                ) {
-
-
-                    KeyButton(
-
-                        text =
-                            "W",
-
-                        pressed =
-                            KeyStateManager.KEY_W
-                                    in pressedKeys
-
-                    )
-
-
-                    Row(
-
-                        horizontalArrangement =
-                            Arrangement.spacedBy(
-                                8.dp
-                            )
-
-                    ) {
-
-                        KeyButton(
-
-                            text =
-                                "A",
-
-                            pressed =
-                                KeyStateManager.KEY_A
-                                        in pressedKeys
-
+                        Modifier.padding(
+                            top = 12.dp
                         )
 
-
-                        KeyButton(
-
-                            text =
-                                "S",
-
-                            pressed =
-                                KeyStateManager.KEY_S
-                                        in pressedKeys
-
-                        )
-
-
-                        KeyButton(
-
-                            text =
-                                "D",
-
-                            pressed =
-                                KeyStateManager.KEY_D
-                                        in pressedKeys
-
-                        )
-
-                    }
-
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                12.dp
-                            )
-                    )
-
-
-                    KeyButton(
-
-                        text =
-                            "SPACE",
-
-                        pressed =
-                            KeyStateManager.KEY_SPACE
-                                    in pressedKeys
-
-                    )
-
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(
-                                8.dp
-                            )
-                    )
-
-
-                    KeyButton(
-
-                        text =
-                            "SHIFT",
-
-                        pressed =
-                            KeyStateManager.KEY_LEFTSHIFT
-                                    in pressedKeys ||
-                                    KeyStateManager.KEY_RIGHTSHIFT
-                                    in pressedKeys
-
-                    )
-
-                }
+                )
 
             }
 
-
-            /*
-             * 按键状态
-             */
 
             item {
 
@@ -2072,11 +1974,26 @@ private fun MainPage(
                 Text(
 
                     text =
-                        "SHIFT: ${
+                        "LMB: ${
                             if (
-                                KeyStateManager.KEY_LEFTSHIFT
-                                in pressedKeys ||
-                                KeyStateManager.KEY_RIGHTSHIFT
+                                KeyStateManager.KEY_LMB
+                                in pressedKeys
+                            ) {
+                                "DOWN"
+                            } else {
+                                "UP"
+                            }
+                        }"
+
+                )
+
+
+                Text(
+
+                    text =
+                        "RMB: ${
+                            if (
+                                KeyStateManager.KEY_RMB
                                 in pressedKeys
                             ) {
                                 "DOWN"
@@ -2378,7 +2295,7 @@ private fun AboutPage(
         Text(
 
             text =
-                "V1.4.8",
+                "V1.5",
 
             style =
                 MaterialTheme
@@ -2482,7 +2399,7 @@ private fun AboutPage(
                 val intent = Intent(
                     Intent.ACTION_VIEW,
                     android.net.Uri.parse(
-                        "https://qun.qq.com/universal-share/share?ac=1&authKey=TAcvzxnpxvtKzwgk%2Ba%2Br7WtZ5Mj63H3jNtzCLY9oy352oBj2mu5EFu2UYrGG2MbR&busi_data=eyJncm91cENvZGUiOiI5MDg4ODc0NzQiLCJ0b2tlbiI6IlVXOWloN3l2eGpQVksrTSsySnZiWi84MXFsN2xhMXVxVUZ4K0xLd3hnRU5yanRpd29rMzB6MmtIeER2L1lwZk4iLCJ1aW4iOiIyNzUxODA5MjM3In0%3D&data=Xt1S3wTDGgqTCNJq8LaH9gg5UE1zg87Uw3a0VawgciuMnwuReiG1Hx-z_UX7X9i2MFP4w7OyNlwf2rVKURr7Zw&svctype=4&tempid=h5_group_info"
+                        "https://qun.qq.com/universal-share/share?ac=1&authKey=TAcvzxnpxvtKzwgk%2Ba%2Br7WtZ5Mj63H3jNtzCLY9oy352oBj2mu5EFu2UYrGG2MbR&busi_data=eyJncm91cENvZGUiOiI5MDg4ODc0NzQiLCJ0b2tlbiI6IlVXOWloN3l2eGpQVksrTSsyMnZiWi84MXFsN2xhMXVxVUZ4K0xLd3hnRU5yanRpd29rMzB6MmtIeER2L1lwZk4iLCJ1aW4iOiIyNzUxODA5MjM3In0%3D&data=Xt1S3wTDGgqTCNJq8LaH9gg5UE1zg87Uw3a0VawgciuMnwuReiG1Hx-z_UX7X9i2MFP4w7OyNlwf2rVKURr7Zw&svctype=4&tempid=h5_group_info"
                     )
                 )
 

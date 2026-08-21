@@ -65,7 +65,8 @@ class KeyOverlayView(
             31 to "S",
             32 to "D",
             57 to "SPACE",
-            42 to "SHIFT"
+            272 to "LMB",
+            273 to "RMB"
         )
 
 
@@ -167,7 +168,6 @@ class KeyOverlayView(
 
 
 
-
         /*
             W
         */
@@ -184,7 +184,6 @@ class KeyOverlayView(
             normalColor,
             pressedColor
         )
-
 
 
 
@@ -242,6 +241,47 @@ class KeyOverlayView(
 
 
 
+        /*
+            LMB / RMB
+        */
+
+
+        val mouseY =
+            asdY + keySize + gap
+
+        val mouseWidth =
+            keySize * 1.5f + gap * 0.5f
+
+
+
+        drawKey(
+            canvas,
+            "LMB",
+            center - mouseWidth / 2f - gap / 2f,
+            mouseY,
+            mouseWidth,
+            keySize,
+            pressedKeys.contains(272),
+            normalColor,
+            pressedColor
+        )
+
+
+
+        drawKey(
+            canvas,
+            "RMB",
+            center + mouseWidth / 2f + gap / 2f,
+            mouseY,
+            mouseWidth,
+            keySize,
+            pressedKeys.contains(273),
+            normalColor,
+            pressedColor
+        )
+
+
+
 
         /*
             SPACE
@@ -254,13 +294,13 @@ class KeyOverlayView(
 
 
         val spaceY =
-            asdY + keySize + gap
+            mouseY + keySize + gap
 
 
 
         drawKey(
             canvas,
-            "SPACE",
+            "————",
             center,
             spaceY,
             longWidth,
@@ -271,30 +311,7 @@ class KeyOverlayView(
         )
 
 
-
-
-
-
-        /*
-            SHIFT
-        */
-
-
-        drawKey(
-            canvas,
-            "SHIFT",
-            center,
-            spaceY + 55f + gap,
-            longWidth,
-            55f,
-            pressedKeys.contains(42),
-            normalColor,
-            pressedColor
-        )
-
-
     }
-
 
 
 

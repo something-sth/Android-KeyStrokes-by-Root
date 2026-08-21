@@ -68,7 +68,7 @@ import java.io.InputStreamReader
 
 
 private const val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
-private const val ANNOUNCEMENT_VERSION = "1.4.8"
+private const val ANNOUNCEMENT_VERSION = "1.5"
 private const val ANNOUNCEMENT_KEY = "announcement_version"
 
 
@@ -308,7 +308,7 @@ fun SetupScreen(
                 title = {
 
                     Text(
-                        "KeyStrokes"
+                        "KeyStrokes V${ANNOUNCEMENT_VERSION}"
                     )
                 }
             )
@@ -621,11 +621,11 @@ fun SetupScreen(
 
                         append(
                             "本版本更新：\n\n" +
-                                    "• 将 Root 模式的自动选择逻辑同步 Shizuku 模式\n" +
-                                    "• 优化了权限授权页的 UI 设计，并添加忽略电池优化的授权卡片\n" +
-                                    "• 在关于页面新增加入 QQ 交流反馈群按钮\n" +
-                                    "• 提前在 Root 模式引入鼠标监听逻辑，但尚未真正启用，仅显示在 logcat 层面\n\n" +
+                                    "• 正式加入鼠标监听，删除 SHIFT 按键监听与显示\n" +
+                                    "• 提升了 Shizuku 模式的稳定性\n" +
+                                    "• 修复了一些零散的 bug\n\n" +
                                     "使用说明：\n" +
+                                    "最好先连接设备再进入软件，否则可能会出现一些不稳定 bug\n" +
                                     "Root 模式稳定性最强，不容易报错，Shizuku 模式经过持续优化稳定性也提升了许多\n" +
                                     "自动选择逻辑会固定排除 event0 到 event6，若发现监听没反应，请手动选择 event6 等更靠前的设备\n\n" +
                                     "若发现软件存在 bug 请第一时间联系我们，我们会尽快处理\n\n"
