@@ -18,19 +18,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
-
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 
-import androidx.compose.material3.Button
+
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 
@@ -52,7 +52,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Info
 
 import androidx.compose.material3.Icon
@@ -219,7 +219,7 @@ private enum class AppPage {
 
     MAIN,
 
-    SETTINGS,
+    CONFIG,
 
     ABOUT
 
@@ -1208,24 +1208,24 @@ private fun KeystrokesTestScreen() {
 
                 NavigationBarItem(
                     selected =
-                        currentPage == AppPage.SETTINGS,
+                        currentPage == AppPage.CONFIG,
 
                     onClick = {
 
                         currentPage =
-                            AppPage.SETTINGS
+                            AppPage.CONFIG
                     },
 
                     icon = {
                         Icon(
-                            Icons.Filled.Settings,
-                            contentDescription = "设置"
+                            Icons.Filled.Tune,
+                            contentDescription = "配置"
                         )
                     },
 
                     label = {
 
-                        Text("设置")
+                        Text("配置")
                     }
                 )
 
@@ -1363,11 +1363,13 @@ private fun KeystrokesTestScreen() {
 
                 }
 
-                AppPage.SETTINGS -> {
+                AppPage.CONFIG -> {
 
-                    SettingsPage(
-                        modifier =
-                            Modifier.padding(innerPadding)
+                    ConfigPage(
+                        repository = remember {
+                            com.something.keystrokes.config.ConfigRepository(context)
+                        },
+                        modifier = Modifier.padding(innerPadding)
                     )
 
                 }
@@ -1456,7 +1458,7 @@ private fun MainPage(
         Text(
 
             text =
-                "KeyStrokes V1.5",
+                "KeyStrokes V1.6",
 
             style =
                 MaterialTheme
@@ -2060,172 +2062,6 @@ private fun MainPage(
 
 /*
  * ============================================================
- * 设置页面
- * ============================================================
- */
-
-@Composable
-private fun SettingsPage(
-    modifier: Modifier = Modifier
-) {
-
-    Column(
-
-        modifier =
-            modifier
-                .fillMaxSize()
-                .padding(16.dp),
-
-        verticalArrangement =
-            Arrangement.spacedBy(12.dp)
-
-    ) {
-
-
-        /*
-         * 顶部
-         */
-
-        Text(
-
-            text =
-                "设置",
-
-            style =
-                MaterialTheme
-                    .typography
-                    .headlineMedium
-
-        )
-
-
-        /*
-         * 悬浮窗
-         */
-
-        Button(
-
-            onClick = {
-                // 暂时不实现
-            },
-
-            modifier =
-                Modifier.fillMaxWidth()
-
-        ) {
-
-            Column {
-
-                Text(
-                    "悬浮窗"
-                )
-
-                Text(
-                    "文字占位",
-                    style =
-                        MaterialTheme
-                            .typography
-                            .bodySmall
-                )
-
-            }
-
-        }
-
-
-        /*
-         * 样式
-         */
-
-        Button(
-
-            onClick = {
-                // 暂时不实现
-            },
-
-            modifier =
-                Modifier.fillMaxWidth()
-
-        ) {
-
-            Column {
-
-                Text(
-                    "样式"
-                )
-
-                Text(
-                    "文字占位",
-                    style =
-                        MaterialTheme
-                            .typography
-                            .bodySmall
-                )
-
-            }
-
-        }
-
-
-        /*
-         * 按键布局
-         */
-
-        Button(
-
-            onClick = {
-                // 暂时不实现
-            },
-
-            modifier =
-                Modifier.fillMaxWidth()
-
-        ) {
-
-            Column {
-
-                Text(
-                    "按键布局"
-                )
-
-                Text(
-                    "文字占位",
-                    style =
-                        MaterialTheme
-                            .typography
-                            .bodySmall
-                )
-
-            }
-
-        }
-
-
-        Spacer(
-            modifier =
-                Modifier.height(8.dp)
-        )
-
-
-        Text(
-
-            text =
-                "尚未更新",
-
-            style =
-                MaterialTheme
-                    .typography
-                    .bodyMedium
-
-        )
-
-    }
-
-}
-
-
-/*
- * ============================================================
  * 关于页面
  * ============================================================
  */
@@ -2295,7 +2131,7 @@ private fun AboutPage(
         Text(
 
             text =
-                "V1.5",
+                "V1.6",
 
             style =
                 MaterialTheme

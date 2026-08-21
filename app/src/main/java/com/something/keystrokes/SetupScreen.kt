@@ -68,7 +68,7 @@ import java.io.InputStreamReader
 
 
 private const val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
-private const val ANNOUNCEMENT_VERSION = "1.5"
+private const val ANNOUNCEMENT_VERSION = "1.6"
 private const val ANNOUNCEMENT_KEY = "announcement_version"
 
 
@@ -621,8 +621,8 @@ fun SetupScreen(
 
                         append(
                             "本版本更新：\n\n" +
-                                    "• 正式加入鼠标监听，删除 SHIFT 按键监听与显示\n" +
-                                    "• 提升了 Shizuku 模式的稳定性\n" +
+                                    "• 更新自定义配置，可调整 UI 大小，透明度以及动画效果，边缘圆角，实现高度自定义\n" +
+                                    "• 优化 UI 运行效率\n" +
                                     "• 修复了一些零散的 bug\n\n" +
                                     "使用说明：\n" +
                                     "最好先连接设备再进入软件，否则可能会出现一些不稳定 bug\n" +

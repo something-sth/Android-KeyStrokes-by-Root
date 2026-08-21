@@ -8,281 +8,130 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
 
+import com.something.keystrokes.config.ConfigRepository
 import com.something.keystrokes.input.OverlayState
 import com.something.keystrokes.view.KeyOverlayView
-
 
 class OverlayService : Service() {
 
     private lateinit var windowManager: WindowManager
-
     private lateinit var keyView: KeyOverlayView
-
     private lateinit var params: WindowManager.LayoutParams
 
-
-    /*
-     * ==========================
-     * 按键监听
-     * ==========================
-     *
-     * OverlayState 可能在后台线程
-     * 调用这里。
-     *
-     * 所以必须通过 keyView.post
-     * 回到 View 所在线程。
-     */
-
     private val keyListener: (Set<Int>) -> Unit = { keys ->
-
         keyView.post {
-
             keyView.updateKeys(keys)
-
         }
-
     }
-
-
-    /*
-     * ==========================
-     * 创建服务
-     * ==========================
-     */
 
     override fun onCreate() {
-
         super.onCreate()
 
-
-        /*
-         * ==========================
-         * WindowManager
-         * ==========================
-         */
-
         windowManager =
-            getSystemService(
-                WINDOW_SERVICE
-            ) as WindowManager
+            getSystemService(WINDOW_SERVICE) as WindowManager
 
+        keyView = KeyOverlayView(this)
 
-        /*
-         * ==========================
-         * 创建真正的按键 UI
-         * ==========================
-         */
+        params = WindowManager.LayoutParams(
+            KeyOverlayView.BASE_WIDTH,
+            KeyOverlayView.BASE_HEIGHT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
 
-        keyView =
-            KeyOverlayView(this)
+        params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        params.x = 0
+        params.y = 200
 
+        setupDragListener()
+        applyCurrentConfig()
 
-        /*
-         * ==========================
-         * 悬浮窗尺寸
-         * ==========================
-         *
-         * 固定 300 × 420。
-         *
-         * 不使用 WRAP_CONTENT，
-         * 避免出现触摸区域异常变大的问题。
-         */
+        windowManager.addView(keyView, params)
 
-        params =
-            WindowManager.LayoutParams(
+        OverlayState.addListener(keyListener)
+    }
 
-                300,
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // startService() while the service is already alive reaches this method too,
+        // so re-read the active profile and apply it without requiring a service restart.
+        if (::keyView.isInitialized) {
+            applyCurrentConfig()
+        }
+        return START_NOT_STICKY
+    }
 
-                420,
+    private fun applyCurrentConfig() {
+        val configRepository = ConfigRepository(this)
+        val configs = configRepository.loadConfigs()
+        val activeId = configRepository.getActiveConfigId()
+        val config = configs.firstOrNull { it.id == activeId }
+            ?: configs.firstOrNull { it.id == ConfigRepository.DEFAULT_ID }
+            ?: return
 
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+        val scale = config.uiScalePercent.coerceIn(50, 200) / 100f
+        keyView.applyUiScale(scale)
+        keyView.applyOpacity(config.opacity)
+        keyView.applyAnimationEnabled(config.animationEnabled)
+        keyView.applyCornerRadius(config.cornerRadiusEnabled, config.cornerRadius)
 
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+        val targetWidth = (KeyOverlayView.BASE_WIDTH * scale).toInt()
+        val targetHeight = (KeyOverlayView.BASE_HEIGHT * scale).toInt()
 
-                PixelFormat.TRANSLUCENT
+        params.width = targetWidth
+        params.height = targetHeight
 
-            )
+        if (isViewAttached()) {
+            windowManager.updateViewLayout(keyView, params)
+        }
+    }
 
+    private fun isViewAttached(): Boolean = keyView.parent != null
 
-        params.gravity =
-            Gravity.TOP or
-                    Gravity.CENTER_HORIZONTAL
-
-
-        params.x =
-            0
-
-        params.y =
-            200
-
-
-        /*
-         * ==========================
-         * 悬浮窗拖动
-         * ==========================
-         */
-
-        var startX =
-            0
-
-        var startY =
-            0
-
-        var touchStartX =
-            0f
-
-        var touchStartY =
-            0f
-
+    private fun setupDragListener() {
+        var startX = 0
+        var startY = 0
+        var touchStartX = 0f
+        var touchStartY = 0f
 
         keyView.setOnTouchListener { _, event ->
-
-            when (
-                event.action
-            ) {
-
+            when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-
-                    startX =
-                        params.x
-
-                    startY =
-                        params.y
-
-                    touchStartX =
-                        event.rawX
-
-                    touchStartY =
-                        event.rawY
-
+                    startX = params.x
+                    startY = params.y
+                    touchStartX = event.rawX
+                    touchStartY = event.rawY
                     true
                 }
-
 
                 MotionEvent.ACTION_MOVE -> {
+                    params.x = startX + (event.rawX - touchStartX).toInt()
+                    params.y = startY + (event.rawY - touchStartY).toInt()
 
-                    params.x =
-                        startX +
-                                (
-                                        event.rawX -
-                                                touchStartX
-                                        ).toInt()
-
-
-                    params.y =
-                        startY +
-                                (
-                                        event.rawY -
-                                                touchStartY
-                                        ).toInt()
-
-
-                    windowManager.updateViewLayout(
-                        keyView,
-                        params
-                    )
-
+                    if (keyView.parent != null) {
+                        windowManager.updateViewLayout(keyView, params)
+                    }
                     true
                 }
 
-
-                MotionEvent.ACTION_UP -> {
-
-                    true
-                }
-
-
-                else -> {
-
-                    true
-                }
-
+                MotionEvent.ACTION_UP -> true
+                else -> true
             }
-
         }
-
-
-        /*
-         * ==========================
-         * 添加悬浮窗
-         * ==========================
-         */
-
-        windowManager.addView(
-            keyView,
-            params
-        )
-
-
-        /*
-         * ==========================
-         * 注册按键监听
-         * ==========================
-         */
-
-        OverlayState.addListener(
-            keyListener
-        )
-
     }
-
-
-    /*
-     * ==========================
-     * 服务销毁
-     * ==========================
-     */
 
     override fun onDestroy() {
+        OverlayState.removeListener(keyListener)
 
-        /*
-         * 先取消按键监听。
-         */
-
-        OverlayState.removeListener(
-            keyListener
-        )
-
-
-        /*
-         * 移除悬浮窗。
-         */
-
-        if (
-            ::keyView.isInitialized
-        ) {
-
+        if (::keyView.isInitialized) {
             try {
-
-                windowManager.removeView(
-                    keyView
-                )
-
-            } catch (
-                _: Exception
-            ) {
+                windowManager.removeView(keyView)
+            } catch (_: Exception) {
             }
-
         }
 
-
         super.onDestroy()
-
     }
 
-
-    /*
-     * ==========================
-     * Service Binder
-     * ==========================
-     */
-
-    override fun onBind(
-        intent: Intent?
-    ): IBinder? {
-
-        return null
-
-    }
-
+    override fun onBind(intent: Intent?): IBinder? = null
 }
