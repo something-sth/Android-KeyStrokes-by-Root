@@ -68,7 +68,7 @@ import java.io.InputStreamReader
 
 
 private const val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
-private const val ANNOUNCEMENT_VERSION = "1.6"
+private const val ANNOUNCEMENT_VERSION = "1.6.1"
 private const val ANNOUNCEMENT_KEY = "announcement_version"
 
 
@@ -621,8 +621,9 @@ fun SetupScreen(
 
                         append(
                             "本版本更新：\n\n" +
-                                    "• 更新自定义配置，可调整 UI 大小，透明度以及动画效果，边缘圆角，实现高度自定义\n" +
-                                    "• 优化 UI 运行效率\n" +
+                                    "• 自定义配置大幅更新，加入按键布局相关设置，包含3种鼠标 CPS 显示\n" +
+                                    "• 彻底重构软件 UI ，全面采用 Material 3 Design\n" +
+                                    "• 解决了连接/断连外接设备时，软件会刷新页面的问题\n" +
                                     "• 修复了一些零散的 bug\n\n" +
                                     "使用说明：\n" +
                                     "最好先连接设备再进入软件，否则可能会出现一些不稳定 bug\n" +

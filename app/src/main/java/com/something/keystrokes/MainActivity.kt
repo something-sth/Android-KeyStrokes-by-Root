@@ -1,5 +1,6 @@
 package com.something.keystrokes
 
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -25,7 +26,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 
-
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.RadioButton
@@ -33,6 +33,15 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.Switch
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -54,8 +63,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Info
-
-import androidx.compose.material3.Icon
 
 import com.something.keystrokes.input.InputDeviceScanner
 import com.something.keystrokes.input.KeyEventData
@@ -279,8 +286,21 @@ private fun KeystrokesTestScreen() {
     }
 
 
+    /*
+     * ============================================================
+     * 进入主页时自动判断默认模式
+     *
+     * Root 优先，Root 未授权则尝试 Shizuku
+     * ============================================================
+     */
     var selectedMode by remember {
-        mutableStateOf(InputMode.ROOT)
+        mutableStateOf(
+            when {
+                checkRootAuthorized() -> InputMode.ROOT
+                checkShizukuAuthorized() -> InputMode.SHIZUKU
+                else -> InputMode.ROOT
+            }
+        )
     }
 
 
@@ -331,6 +351,11 @@ private fun KeystrokesTestScreen() {
                             )
 
                         keyStateManager.update(event)
+
+                        if ((event.code == KeyStateManager.KEY_LMB ||
+                                    event.code == KeyStateManager.KEY_RMB) && event.value == 1) {
+                            OverlayState.recordMouseClick(event.code)
+                        }
 
                         pressedKeys =
                             keyStateManager.getPressedKeys()
@@ -810,6 +835,11 @@ private fun KeystrokesTestScreen() {
 
                                 keyStateManager.update(event)
 
+                                if ((event.code == KeyStateManager.KEY_LMB ||
+                                            event.code == KeyStateManager.KEY_RMB) && event.value == 1) {
+                                    OverlayState.recordMouseClick(event.code)
+                                }
+
                                 pressedKeys =
                                     keyStateManager.getPressedKeys()
 
@@ -1271,6 +1301,8 @@ private fun KeystrokesTestScreen() {
                         events = events,
                         pressedKeys = pressedKeys,
 
+                        isListening = isListening,
+
                         selectedMode = selectedMode,
                         selectedDevicePaths = selectedDevicePaths,
                         autoSelectedDevicePaths = autoSelectedDevicePaths,
@@ -1410,6 +1442,9 @@ private fun MainPage(
     pressedKeys:
     Set<Int>,
 
+    isListening:
+    Boolean,
+
     selectedMode: InputMode,
 
     selectedDevicePaths: Set<String>,
@@ -1436,6 +1471,28 @@ private fun MainPage(
 
 ) {
 
+    val context = LocalContext.current
+
+    /*
+     * 悬浮窗开关状态 - 持久化存储
+     */
+    val overlayPreferences =
+        remember {
+            context.getSharedPreferences(
+                "keystrokes_overlay",
+                Context.MODE_PRIVATE
+            )
+        }
+
+    var overlayEnabled by remember {
+        mutableStateOf(
+            overlayPreferences.getBoolean(
+                "overlay_enabled",
+                false
+            )
+        )
+    }
+
     Column(
 
         modifier =
@@ -1458,7 +1515,7 @@ private fun MainPage(
         Text(
 
             text =
-                "KeyStrokes V1.6",
+                "KeyStrokes V1.6.1",
 
             style =
                 MaterialTheme
@@ -1525,6 +1582,14 @@ private fun MainPage(
                         shizukuAuthorized =
                             checkShizukuAuthorized()
 
+                        /*
+                         * 重新读取悬浮窗保存的状态
+                         */
+                        overlayEnabled =
+                            overlayPreferences.getBoolean(
+                                "overlay_enabled",
+                                false
+                            )
                     }
 
                 }
@@ -1543,166 +1608,242 @@ private fun MainPage(
 
         }
 
-        Column(
-            modifier = Modifier.fillMaxWidth()
+        /*
+         * 点击模式时再次实时检查授权。
+         *
+         * 这样即使用户没有离开页面，
+         * Root / Shizuku 授权状态发生变化，
+         * 点击时也能够立即刷新。
+         */
+        fun trySelectMode(mode: InputMode) {
+
+            when (mode) {
+
+                InputMode.ROOT -> {
+
+                    val authorized =
+                        checkRootAuthorized()
+
+                    rootAuthorized =
+                        authorized
+
+                    if (!authorized) {
+
+                        android.widget.Toast.makeText(
+                            context,
+                            "Root 未授权",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+
+                        return
+                    }
+                }
+
+                InputMode.SHIZUKU -> {
+
+                    val authorized =
+                        checkShizukuAuthorized()
+
+                    shizukuAuthorized =
+                        authorized
+
+                    if (!authorized) {
+
+                        android.widget.Toast.makeText(
+                            context,
+                            "Shizuku 未授权",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+
+                        return
+                    }
+                }
+            }
+
+            onModeChanged(mode)
+        }
+
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
         ) {
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
+            SegmentedButton(
+                selected =
+                    selectedMode == InputMode.ROOT,
+
+                onClick = {
+                    trySelectMode(InputMode.ROOT)
+                },
+
+                enabled = true,
+
+                shape =
+                    SegmentedButtonDefaults.itemShape(
+                        index = 0,
+                        count = 2
+                    ),
+
+                colors =
+                    SegmentedButtonDefaults.colors(
+                        activeContainerColor =
+                            if (rootAuthorized) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            },
+                        activeContentColor =
+                            if (rootAuthorized) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        inactiveContainerColor =
+                            MaterialTheme.colorScheme.surfaceContainerHighest,
+                        inactiveContentColor =
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
             ) {
-
-                Button(
-                    onClick = {
-                        onModeChanged(InputMode.ROOT)
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                ) {
-                    Text("Root 模式")
-                }
-
-                Spacer(
-                    modifier = Modifier.width(8.dp)
-                )
-
-                Button(
-                    onClick = {
-                        onModeChanged(InputMode.SHIZUKU)
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                ) {
-                    Text("Shizuku 模式")
-                }
+                Text("Root 模式")
             }
 
-            Spacer(
-                modifier = Modifier.height(6.dp)
-            )
+            SegmentedButton(
+                selected =
+                    selectedMode == InputMode.SHIZUKU,
 
-            Row(
-                modifier = Modifier.fillMaxWidth()
+                onClick = {
+                    trySelectMode(InputMode.SHIZUKU)
+                },
+
+                enabled = true,
+
+                shape =
+                    SegmentedButtonDefaults.itemShape(
+                        index = 1,
+                        count = 2
+                    ),
+
+                colors =
+                    SegmentedButtonDefaults.colors(
+                        activeContainerColor =
+                            if (shizukuAuthorized) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            },
+                        activeContentColor =
+                            if (shizukuAuthorized) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        inactiveContainerColor =
+                            MaterialTheme.colorScheme.surfaceContainerHighest,
+                        inactiveContentColor =
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
             ) {
-
-                /*
-                 * Root
-                 */
-
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-
-                    Text(
-                        text = if (selectedMode == InputMode.ROOT) {
-                            "已选择"
-                        } else {
-                            "未选择"
-                        },
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-
-                    Text(
-                        text = if (rootAuthorized) {
-                            "已授权"
-                        } else {
-                            "未授权"
-                        },
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-
-                }
-
-                Spacer(
-                    modifier = Modifier.width(8.dp)
-                )
-
-                /*
-                 * Shizuku
-                 */
-
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-
-                    Text(
-                        text = if (selectedMode == InputMode.SHIZUKU) {
-                            "已选择"
-                        } else {
-                            "未选择"
-                        },
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-
-                    Text(
-                        text = if (shizukuAuthorized) {
-                            "已授权"
-                        } else {
-                            "未授权"
-                        },
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-
-                }
-
+                Text("Shizuku 模式")
             }
-
         }
 
 
         /*
          * =================================================
-         * 悬浮窗
+         * 按键显示 UI 悬浮窗（Switch）
          * =================================================
          */
 
-        Button(
+        ListItem(
+            headlineContent = {
+                Text("按键显示 UI 悬浮窗")
+            },
 
-            onClick =
-                onStartOverlay,
+            supportingContent = {
+                Text(
+                    if (overlayEnabled) {
+                        "悬浮窗正在显示"
+                    } else {
+                        "显示按键状态悬浮窗"
+                    }
+                )
+            },
 
-            modifier =
-                Modifier.fillMaxWidth()
+            trailingContent = {
 
-        ) {
+                Switch(
 
-            Text(
-                "开启按键显示UI"
-            )
+                    checked = overlayEnabled,
 
-        }
+                    onCheckedChange = { enabled ->
 
+                        if (enabled) {
 
-        Button(
+                            if (
+                                android.provider.Settings.canDrawOverlays(
+                                    context
+                                )
+                            ) {
 
-            onClick =
-                onStopOverlay,
+                                onStartOverlay()
 
-            modifier =
-                Modifier.fillMaxWidth()
+                                overlayEnabled = true
 
-        ) {
+                                overlayPreferences
+                                    .edit()
+                                    .putBoolean(
+                                        "overlay_enabled",
+                                        true
+                                    )
+                                    .apply()
 
-            Text(
-                "关闭按键显示UI"
-            )
+                            } else {
 
-        }
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "请先授予悬浮窗权限",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+
+                                overlayEnabled = false
+                            }
+
+                        } else {
+
+                            onStopOverlay()
+
+                            overlayEnabled = false
+
+                            overlayPreferences
+                                .edit()
+                                .putBoolean(
+                                    "overlay_enabled",
+                                    false
+                                )
+                                .apply()
+                        }
+                    }
+                )
+            }
+        )
 
 
         /*
          * =================================================
-         * 监听
+         * 监听（单个按钮，根据状态切换文字）
          * =================================================
          */
 
         Button(
 
-            onClick =
-                onStartListening,
+            onClick = {
+                if (isListening) {
+                    onStopListening()
+                } else {
+                    onStartListening()
+                }
+            },
 
             modifier =
                 Modifier.fillMaxWidth()
@@ -1710,24 +1851,11 @@ private fun MainPage(
         ) {
 
             Text(
-                "开始监听输入"
-            )
-
-        }
-
-
-        Button(
-
-            onClick =
-                onStopListening,
-
-            modifier =
-                Modifier.fillMaxWidth()
-
-        ) {
-
-            Text(
-                "停止监听输入"
+                if (isListening) {
+                    "停止监听输入"
+                } else {
+                    "开始监听输入"
+                }
             )
 
         }
@@ -2006,6 +2134,23 @@ private fun MainPage(
 
                 )
 
+
+                Text(
+
+                    text =
+                        "SHIFT: ${
+                            if (
+                                KeyStateManager.KEY_LEFT_SHIFT in pressedKeys
+                                || KeyStateManager.KEY_RIGHT_SHIFT in pressedKeys
+                            ) {
+                                "DOWN"
+                            } else {
+                                "UP"
+                            }
+                        }"
+
+                )
+
             }
 
 
@@ -2070,222 +2215,264 @@ private fun MainPage(
 private fun AboutPage(
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
 
-    Column(
+    val context =
+        LocalContext.current
+
+    fun openUrl(url: String) {
+
+        val intent =
+            Intent(
+                Intent.ACTION_VIEW,
+                android.net.Uri.parse(url)
+            )
+
+        context.startActivity(intent)
+    }
+
+    LazyColumn(
 
         modifier =
             modifier
                 .fillMaxSize()
-                .padding(16.dp),
-
-        horizontalAlignment =
-            Alignment.CenterHorizontally,
+                .padding(horizontal = 16.dp),
 
         verticalArrangement =
             Arrangement.spacedBy(12.dp)
 
     ) {
 
-
-        /*
-         * 顶部
-         */
-
-        Text(
-
-            text =
-                "关于",
-
-            style =
-                MaterialTheme
-                    .typography
-                    .headlineMedium
-
-        )
-
-
-        Spacer(
-            modifier =
-                Modifier.height(32.dp)
-        )
-
-
-        /*
-         * 项目名称
-         */
-
-        Text(
-
-            text =
-                "Sth-Android-KeyStrokes",
-
-            style =
-                MaterialTheme
-                    .typography
-                    .headlineLarge
-
-        )
-
-
-        Text(
-
-            text =
-                "V1.6",
-
-            style =
-                MaterialTheme
-                    .typography
-                    .titleMedium
-
-        )
-
-
-        Spacer(
-            modifier =
-                Modifier.height(16.dp)
-        )
-
-
-        Text(
-
-            text =
-                "一个Android\n" +
-                        "按键显示UI",
-
-            style =
-                MaterialTheme
-                    .typography
-                    .bodyLarge
-
-        )
-
-
-        Spacer(
-            modifier =
-                Modifier.height(24.dp)
-        )
-
-
-        /*
-         * GitHub
-         */
-
-        Button(
-
-            onClick = {
-
-                val intent = Intent(
-                    Intent.ACTION_VIEW,
-                    android.net.Uri.parse(
-                        "https://github.com/something-sth/Sth-Android-KeyStrokes"
-                    )
-                )
-
-                context.startActivity(intent)
-
-            },
-
-            modifier =
-                Modifier.fillMaxWidth()
-
-        ) {
+        item {
 
             Text(
-                "GitHub 开源仓库"
-            )
+                text = "关于",
+                style =
+                    MaterialTheme
+                        .typography
+                        .headlineMedium,
 
+                modifier =
+                    Modifier.padding(
+                        top = 16.dp
+                    )
+            )
         }
 
+        item {
 
-        /*
-         * License
-         */
+            Card(
+                modifier =
+                    Modifier.fillMaxWidth(),
 
-        Button(
-
-            onClick = {
-
-                val intent = Intent(
-                    Intent.ACTION_VIEW,
-                    android.net.Uri.parse(
-                        "https://github.com/something-sth/Sth-Android-KeyStrokes/blob/main/LICENSE"
+                colors =
+                    CardDefaults.cardColors(
+                        containerColor =
+                            MaterialTheme
+                                .colorScheme
+                                .surfaceContainer
                     )
-                )
+            ) {
 
-                context.startActivity(intent)
+                Column(
+                    modifier =
+                        Modifier.padding(20.dp),
 
-            },
+                    verticalArrangement =
+                        Arrangement.spacedBy(6.dp)
+                ) {
 
-            modifier =
-                Modifier.fillMaxWidth()
+                    Text(
+                        text = "KeyStrokes",
+                        style =
+                            MaterialTheme
+                                .typography
+                                .headlineSmall
+                    )
 
-        ) {
+                    Text(
+                        text = "V1.6.1",
+                        style =
+                            MaterialTheme
+                                .typography
+                                .labelLarge,
+
+                        color =
+                            MaterialTheme
+                                .colorScheme
+                                .primary
+                    )
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(8.dp)
+                    )
+
+                    Text(
+                        text =
+                            "一个通过 Root 或 Shizuku 监听外接输入设备，" +
+                                    "并提供可自定义悬浮窗按键显示的 Android 应用。",
+
+                        style =
+                            MaterialTheme
+                                .typography
+                                .bodyLarge
+                    )
+                }
+            }
+        }
+
+        item {
 
             Text(
-                "开源许可证 MIT License"
-            )
+                text = "项目链接",
+                style =
+                    MaterialTheme
+                        .typography
+                        .titleMedium,
 
+                modifier =
+                    Modifier.padding(
+                        top = 8.dp,
+                        bottom = 2.dp
+                    )
+            )
         }
 
-        Button(
+        item {
 
-            onClick = {
+            Card(
+                modifier =
+                    Modifier.fillMaxWidth()
+            ) {
 
-                val intent = Intent(
-                    Intent.ACTION_VIEW,
-                    android.net.Uri.parse(
-                        "https://qun.qq.com/universal-share/share?ac=1&authKey=TAcvzxnpxvtKzwgk%2Ba%2Br7WtZ5Mj63H3jNtzCLY9oy352oBj2mu5EFu2UYrGG2MbR&busi_data=eyJncm91cENvZGUiOiI5MDg4ODc0NzQiLCJ0b2tlbiI6IlVXOWloN3l2eGpQVksrTSsyMnZiWi84MXFsN2xhMXVxVUZ4K0xLd3hnRU5yanRpd29rMzB6MmtIeER2L1lwZk4iLCJ1aW4iOiIyNzUxODA5MjM3In0%3D&data=Xt1S3wTDGgqTCNJq8LaH9gg5UE1zg87Uw3a0VawgciuMnwuReiG1Hx-z_UX7X9i2MFP4w7OyNlwf2rVKURr7Zw&svctype=4&tempid=h5_group_info"
+                Column {
+
+                    ListItem(
+
+                        headlineContent = {
+                            Text("GitHub 开源仓库")
+                        },
+
+                        supportingContent = {
+                            Text(
+                                "Sth-Android-KeyStrokes"
+                            )
+                        },
+
+                        trailingContent = {
+                            Text(
+                                text = "›",
+                                style = MaterialTheme.typography.headlineSmall
+                            )
+                        },
+
+                        modifier =
+                            Modifier.clickable {
+
+                                openUrl(
+                                    "https://github.com/something-sth/Sth-Android-KeyStrokes"
+                                )
+                            }
                     )
-                )
 
-                context.startActivity(intent)
+                    HorizontalDivider()
 
-            },
+                    ListItem(
 
-            modifier =
-                Modifier.fillMaxWidth()
+                        headlineContent = {
+                            Text("MIT License")
+                        },
 
-        ) {
+                        supportingContent = {
+                            Text(
+                                "查看项目开源许可证"
+                            )
+                        },
+
+                        trailingContent = {
+                            Text(
+                                text = "›",
+                                style = MaterialTheme.typography.headlineSmall
+                            )
+                        },
+
+                        modifier =
+                            Modifier.clickable {
+
+                                openUrl(
+                                    "https://github.com/something-sth/Sth-Android-KeyStrokes/blob/main/LICENSE"
+                                )
+                            }
+                    )
+
+                    HorizontalDivider()
+
+                    ListItem(
+
+                        headlineContent = {
+                            Text("QQ 交流反馈群")
+                        },
+
+                        supportingContent = {
+                            Text(
+                                "加入交流群进行反馈与交流"
+                            )
+                        },
+
+                        trailingContent = {
+                            Text(
+                                text = "›",
+                                style = MaterialTheme.typography.headlineSmall
+                            )
+                        },
+
+                        modifier =
+                            Modifier.clickable {
+
+                                openUrl(
+                                    "https://qun.qq.com/universal-share/share?ac=1&authKey=TAcvzxnpxvtKzwgk%2Ba%2Br7WtZ5Mj63H3jNtzCLY9oy352oBj2mu5EFu2UYrGG2MbR&busi_data=eyJncm91cENvZGUiOiI5MDg4ODc0NzQiLCJ0b2tlbiI6IlVXOWloN3l2eGpQVksrTSsyMnZiWi84MXFsN2xhMXVxVUZ4K0xLd3hnRU5yanRpd29rMzB6MmtIeER2L1lwZk4iLCJ1aW4iOiIyNzUxODA5MjM3In0%3D&data=Xt1S3wTDGgqTCNJq8LaH9gg5UE1zg87Uw3a0VawgciuMnwuReiG1Hx-z_UX7X9i2MFP4w7OyNlwf2rVKURr7Zw&svctype=4&tempid=h5_group_info"
+                                )
+                            }
+                    )
+                }
+            }
+        }
+
+        item {
+
+            HorizontalDivider(
+                modifier =
+                    Modifier.padding(
+                        vertical = 8.dp
+                    )
+            )
 
             Text(
-                "加入 QQ 交流反馈群"
+                text = "开发者：something-sth",
+                style =
+                    MaterialTheme
+                        .typography
+                        .bodyMedium
             )
 
+            Text(
+                text = "多多支持谢谢喵~",
+                style =
+                    MaterialTheme
+                        .typography
+                        .bodySmall,
+
+                color =
+                    MaterialTheme
+                        .colorScheme
+                        .onSurfaceVariant,
+
+                modifier =
+                    Modifier.padding(
+                        top = 4.dp,
+                        bottom = 20.dp
+                    )
+            )
         }
-
-
-        Spacer(
-            modifier =
-                Modifier.height(16.dp)
-        )
-
-
-        Text(
-
-            text =
-                "开发者：something-sth",
-
-            style =
-                MaterialTheme
-                    .typography
-                    .bodyMedium
-
-        )
-
-
-        Text(
-
-            text =
-                "多多支持谢谢喵~",
-
-            style =
-                MaterialTheme
-                    .typography
-                    .bodySmall
-
-        )
-
     }
-
 }

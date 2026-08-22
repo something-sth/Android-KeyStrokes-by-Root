@@ -71,12 +71,20 @@ class OverlayService : Service() {
 
         val scale = config.uiScalePercent.coerceIn(50, 200) / 100f
         keyView.applyUiScale(scale)
+        keyView.applyTextScale(config.textScalePercent)
         keyView.applyOpacity(config.opacity)
         keyView.applyAnimationEnabled(config.animationEnabled)
         keyView.applyCornerRadius(config.cornerRadiusEnabled, config.cornerRadius)
+        keyView.applyShiftKeyEnabled(config.shiftKeyEnabled)
+        keyView.applyReplaceSpaceDisplay(config.replaceSpaceDisplay)
+        keyView.applyMouseButtonsEnabled(config.mouseButtonsEnabled)
+        keyView.applyMouseCps(
+            config.mouseButtonsEnabled && config.mouseCpsEnabled,
+            config.mouseCpsMode
+        )
 
         val targetWidth = (KeyOverlayView.BASE_WIDTH * scale).toInt()
-        val targetHeight = (KeyOverlayView.BASE_HEIGHT * scale).toInt()
+        val targetHeight = (keyView.getBaseHeight() * scale).toInt()
 
         params.width = targetWidth
         params.height = targetHeight

@@ -7,9 +7,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
@@ -29,6 +32,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -170,7 +176,7 @@ fun ConfigPage(
             item {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "可以自定义 UI 大小以及透明度，可以开启动画效果与边缘圆角，高度自定义\n修改正在使用的配置后关闭悬浮窗再打开即可生效",
+                    "可以自定义 KeyStrokes 的悬浮窗 UI ，高度自定义\n修改正在使用的配置后关闭悬浮窗再打开即可生效",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -389,16 +395,27 @@ private fun ConfigEditDialog(
     var name by remember(config.id) { mutableStateOf(config.name) }
     var description by remember(config.id) { mutableStateOf(config.description) }
     var uiScale by remember(config.id) { mutableStateOf(config.uiScalePercent.toFloat()) }
+    var textScale by remember(config.id) { mutableStateOf(config.textScalePercent.toFloat()) }
     var opacity by remember(config.id) { mutableStateOf(config.opacity.toFloat()) }
     var animationEnabled by remember(config.id) { mutableStateOf(config.animationEnabled) }
     var cornerRadiusEnabled by remember(config.id) { mutableStateOf(config.cornerRadiusEnabled) }
     var cornerRadius by remember(config.id) { mutableStateOf(config.cornerRadius) }
+    var shiftKeyEnabled by remember(config.id) { mutableStateOf(config.shiftKeyEnabled) }
+    var replaceSpaceDisplay by remember(config.id) { mutableStateOf(config.replaceSpaceDisplay) }
+    var mouseButtonsEnabled by remember(config.id) { mutableStateOf(config.mouseButtonsEnabled) }
+    var mouseCpsEnabled by remember(config.id) { mutableStateOf(config.mouseCpsEnabled) }
+    var mouseCpsMode by remember(config.id) { mutableStateOf(config.mouseCpsMode.coerceIn(1, 3)) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("编辑配置") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -448,6 +465,36 @@ private fun ConfigEditDialog(
                         onValueChange = { uiScale = it },
                         valueRange = 50f..200f,
                         steps = 14,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "字符缩放",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            "${textScale.toInt()}%",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(
+                        "相对于 UI 大小调整按键字符大小，100% 为默认大小",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Slider(
+                        value = textScale,
+                        onValueChange = { textScale = it },
+                        valueRange = 50f..150f,
+                        steps = 19,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -559,6 +606,121 @@ private fun ConfigEditDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+
+                Spacer(Modifier.height(4.dp))
+
+                Text(
+                    "按键布局",
+                    style = MaterialTheme.typography.titleSmall
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "启用 SHIFT 键",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            "显示 SHIFT 按键",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = shiftKeyEnabled,
+                        onCheckedChange = { shiftKeyEnabled = it }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "替换 SPACE 键显示",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            "使用 KeyStrokes Mod 风格的长横线代替 SPACE 字样",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = replaceSpaceDisplay,
+                        onCheckedChange = { replaceSpaceDisplay = it }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "启用鼠标左右键",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            "显示 LMB / RMB 按键",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = mouseButtonsEnabled,
+                        onCheckedChange = { mouseButtonsEnabled = it }
+                    )
+                }
+
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "鼠标 CPS 显示",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                "显示最近 1 秒内的鼠标点击次数",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = mouseCpsEnabled,
+                            onCheckedChange = { mouseCpsEnabled = it },
+                            enabled = mouseButtonsEnabled
+                        )
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+
+                    SingleChoiceSegmentedButtonRow(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        listOf(1, 2, 3).forEachIndexed { index, mode ->
+                            SegmentedButton(
+                                selected = mouseCpsMode == mode,
+                                onClick = { mouseCpsMode = mode },
+                                shape = SegmentedButtonDefaults.itemShape(
+                                    index = index,
+                                    count = 3
+                                ),
+                                enabled = mouseButtonsEnabled && mouseCpsEnabled
+                            ) {
+                                Text("Mode $mode")
+                            }
+                        }
+                    }
+                }
+
             }
         },
         confirmButton = {
@@ -570,10 +732,16 @@ private fun ConfigEditDialog(
                             name = name.trim(),
                             description = description.trim(),
                             uiScalePercent = uiScale.toInt().coerceIn(50, 200),
+                            textScalePercent = textScale.toInt().coerceIn(50, 150),
                             opacity = opacity.toInt().coerceIn(20, 100),
                             animationEnabled = animationEnabled,
                             cornerRadiusEnabled = cornerRadiusEnabled,
-                            cornerRadius = cornerRadius.coerceIn(0f, 50f)
+                            cornerRadius = cornerRadius.coerceIn(0f, 50f),
+                            shiftKeyEnabled = shiftKeyEnabled,
+                            replaceSpaceDisplay = replaceSpaceDisplay,
+                            mouseButtonsEnabled = mouseButtonsEnabled,
+                            mouseCpsEnabled = mouseCpsEnabled,
+                            mouseCpsMode = mouseCpsMode.coerceIn(1, 3)
                         )
                     )
                 }

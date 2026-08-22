@@ -1,5 +1,6 @@
 package com.something.keystrokes.view
 
+import com.something.keystrokes.input.OverlayState
 import android.animation.Animator
 import android.animation.ValueAnimator
 import android.content.Context
@@ -21,10 +22,16 @@ class KeyOverlayView(
     private var pressedKeys = emptySet<Int>()
 
     private var uiScale = 1f
+    private var textScale = 1f
     private var opacity = 70
     private var animationEnabled = true
     private var cornerRadiusEnabled = false
     private var cornerRadiusPercent = 0f
+    private var shiftKeyEnabled = false
+    private var replaceSpaceDisplay = true
+    private var mouseButtonsEnabled = true
+    private var mouseCpsEnabled = false
+    private var mouseCpsMode = 1
 
     /**
      * 每个按键当前的动画进度：
@@ -40,6 +47,11 @@ class KeyOverlayView(
         invalidate()
     }
 
+    fun applyTextScale(percent: Int) {
+        textScale = percent.coerceIn(50, 150) / 100f
+        invalidate()
+    }
+
     fun applyOpacity(percent: Int) {
         opacity = percent.coerceIn(20, 100)
         invalidate()
@@ -48,6 +60,27 @@ class KeyOverlayView(
     fun applyCornerRadius(enabled: Boolean, percent: Float) {
         cornerRadiusEnabled = enabled
         cornerRadiusPercent = percent.coerceIn(0f, 50f)
+        invalidate()
+    }
+
+    fun applyShiftKeyEnabled(enabled: Boolean) {
+        shiftKeyEnabled = enabled
+        invalidate()
+    }
+
+    fun applyReplaceSpaceDisplay(enabled: Boolean) {
+        replaceSpaceDisplay = enabled
+        invalidate()
+    }
+
+    fun applyMouseButtonsEnabled(enabled: Boolean) {
+        mouseButtonsEnabled = enabled
+        invalidate()
+    }
+
+    fun applyMouseCps(enabled: Boolean, mode: Int) {
+        mouseCpsEnabled = enabled
+        mouseCpsMode = mode.coerceIn(1, 3)
         invalidate()
     }
 
@@ -71,8 +104,26 @@ class KeyOverlayView(
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = (BASE_WIDTH * uiScale).roundToInt()
-        val height = (BASE_HEIGHT * uiScale).roundToInt()
+        val height = (getBaseHeight() * uiScale).roundToInt()
         setMeasuredDimension(width, height)
+    }
+
+    /** 根据当前 CPS 模式和 SHIFT 设置计算悬浮窗基础高度。 */
+    fun getBaseHeight(): Int {
+        return when {
+            mouseCpsEnabled && mouseCpsMode == 2 -> {
+                val spaceY = 370f
+                val shiftBottom = if (shiftKeyEnabled) spaceY + 55f + 10f + 55f else spaceY + 55f
+                kotlin.math.ceil(shiftBottom + 10f).toInt()
+            }
+            mouseCpsEnabled && mouseCpsMode == 3 -> {
+                val mouseBottom = 190f + 110f
+                val spaceY = mouseBottom + 10f
+                val shiftBottom = if (shiftKeyEnabled) spaceY + 55f + 10f + 55f else spaceY + 55f
+                kotlin.math.ceil(shiftBottom + 10f).toInt()
+            }
+            else -> BASE_HEIGHT
+        }
     }
 
     private val keyMap = mapOf(
@@ -174,7 +225,7 @@ class KeyOverlayView(
         val pressedTextColor = Color.BLACK
 
         paint.textAlign = Paint.Align.CENTER
-        paint.textSize = 35f
+        paint.textSize = 35f * textScale
         paint.typeface = android.graphics.Typeface.DEFAULT
 
         /* W */
@@ -190,17 +241,169 @@ class KeyOverlayView(
         /* LMB / RMB */
         val mouseY = asdY + keySize + gap
         val mouseWidth = keySize * 1.5f + gap * 0.5f
+        var spaceY = mouseY
 
-        drawKey(canvas, "LMB", center - mouseWidth / 2f - gap / 2f, mouseY, mouseWidth, keySize, 272, normalColor, pressedColor, normalTextColor, pressedTextColor)
-        drawKey(canvas, "RMB", center + mouseWidth / 2f + gap / 2f, mouseY, mouseWidth, keySize, 273, normalColor, pressedColor, normalTextColor, pressedTextColor)
+        if (mouseButtonsEnabled) {
+            val lmbCps = if (mouseCpsEnabled) OverlayState.getMouseCps(272) else 0
+            val rmbCps = if (mouseCpsEnabled) OverlayState.getMouseCps(273) else 0
+
+            val lmbLabel = if (mouseCpsEnabled && mouseCpsMode == 1 && lmbCps > 0) "LMB $lmbCps" else "LMB"
+            val rmbLabel = if (mouseCpsEnabled && mouseCpsMode == 1 && rmbCps > 0) "RMB $rmbCps" else "RMB"
+
+            val mouseHeight = if (mouseCpsEnabled && mouseCpsMode == 3) 110f else keySize
+
+            if (mouseCpsEnabled && mouseCpsMode == 3) {
+                drawKeyWithSecondaryText(
+                    canvas, "LMB", "CPS: $lmbCps",
+                    center - mouseWidth / 2f - gap / 2f, mouseY, mouseWidth, mouseHeight,
+                    272, normalColor, pressedColor, normalTextColor, pressedTextColor
+                )
+                drawKeyWithSecondaryText(
+                    canvas, "RMB", "CPS: $rmbCps",
+                    center + mouseWidth / 2f + gap / 2f, mouseY, mouseWidth, mouseHeight,
+                    273, normalColor, pressedColor, normalTextColor, pressedTextColor
+                )
+            } else {
+                drawKey(canvas, lmbLabel, center - mouseWidth / 2f - gap / 2f, mouseY, mouseWidth, mouseHeight, 272, normalColor, pressedColor, normalTextColor, pressedTextColor)
+                drawKey(canvas, rmbLabel, center + mouseWidth / 2f + gap / 2f, mouseY, mouseWidth, mouseHeight, 273, normalColor, pressedColor, normalTextColor, pressedTextColor)
+            }
+
+            when (mouseCpsMode) {
+                2 -> {
+                    val cpsY = mouseY + keySize + gap
+                    drawStaticKey(canvas, "CPS: $lmbCps", center - mouseWidth / 2f - gap / 2f, cpsY, mouseWidth, keySize, normalColor, normalTextColor)
+                    drawStaticKey(canvas, "CPS: $rmbCps", center + mouseWidth / 2f + gap / 2f, cpsY, mouseWidth, keySize, normalColor, normalTextColor)
+                    spaceY = cpsY + keySize + gap
+                }
+                3 -> {
+                    spaceY = mouseY + mouseHeight + gap
+                }
+                else -> {
+                    spaceY = mouseY + keySize + gap
+                }
+            }
+        }
 
         /* SPACE */
         val longWidth = keySize * 3 + gap * 2
-        val spaceY = mouseY + keySize + gap
+        val spaceLabel = if (replaceSpaceDisplay) "————" else "SPACE"
 
-        drawKey(canvas, "————", center, spaceY, longWidth, 55f, 57, normalColor, pressedColor, normalTextColor, pressedTextColor)
+        drawKey(
+            canvas,
+            spaceLabel,
+            center,
+            spaceY,
+            longWidth,
+            55f,
+            57,
+            normalColor,
+            pressedColor,
+            normalTextColor,
+            pressedTextColor
+        )
+
+        /* SHIFT */
+        if (shiftKeyEnabled) {
+            val shiftY = spaceY + 55f + gap
+
+            drawKey(
+                canvas,
+                "SHIFT",
+                center,
+                shiftY,
+                longWidth,
+                55f,
+                42,
+                normalColor,
+                pressedColor,
+                normalTextColor,
+                pressedTextColor,
+                54
+            )
+        }
 
         canvas.restore()
+
+        // CPS 需要在没有新点击时也能从非零值回落到 0，Mode 1/2/3 都需要持续刷新。
+        if (mouseCpsEnabled && mouseButtonsEnabled) {
+            postInvalidateDelayed(CPS_REFRESH_MS)
+        }
+    }
+
+    private fun drawStaticKey(
+        canvas: Canvas,
+        text: String,
+        centerX: Float,
+        topY: Float,
+        w: Float,
+        h: Float,
+        normal: Int,
+        textColor: Int
+    ) {
+        paint.color = normal
+
+        val left = centerX - w / 2
+        val right = centerX + w / 2
+        val bottom = topY + h
+
+        if (cornerRadiusEnabled && cornerRadiusPercent > 0f) {
+            val radius = minOf(w, h) * (cornerRadiusPercent / 100f)
+            canvas.drawRoundRect(left, topY, right, bottom, radius, radius, paint)
+        } else {
+            canvas.drawRect(left, topY, right, bottom, paint)
+        }
+
+        paint.color = textColor
+        canvas.drawText(
+            text,
+            centerX,
+            topY + h / 2 + 12,
+            paint
+        )
+    }
+
+    private fun drawKeyWithSecondaryText(
+        canvas: Canvas,
+        primaryText: String,
+        secondaryText: String,
+        centerX: Float,
+        topY: Float,
+        w: Float,
+        h: Float,
+        keyCode: Int,
+        normal: Int,
+        active: Int,
+        normalText: Int,
+        activeText: Int,
+        vararg alternateKeyCodes: Int
+    ) {
+        val allKeyCodes = listOf(keyCode) + alternateKeyCodes
+        val progress = allKeyCodes.maxOfOrNull { code ->
+            keyProgress[code] ?: if (pressedKeys.contains(code)) 1f else 0f
+        } ?: 0f
+
+        paint.color = lerpColor(normal, active, progress)
+
+        val left = centerX - w / 2
+        val right = centerX + w / 2
+        val bottom = topY + h
+
+        if (cornerRadiusEnabled && cornerRadiusPercent > 0f) {
+            val radius = minOf(w, h) * (cornerRadiusPercent / 100f)
+            canvas.drawRoundRect(left, topY, right, bottom, radius, radius, paint)
+        } else {
+            canvas.drawRect(left, topY, right, bottom, paint)
+        }
+
+        paint.color = lerpColor(normalText, activeText, progress)
+
+        val centerY = topY + h / 2f
+        paint.textSize = 28f * textScale
+        canvas.drawText(primaryText, centerX, centerY - 4f * textScale, paint)
+        paint.textSize = 22f * textScale
+        canvas.drawText(secondaryText, centerX, centerY + 24f * textScale, paint)
+
+        paint.textSize = 35f * textScale
     }
 
     private fun drawKey(
@@ -214,9 +417,13 @@ class KeyOverlayView(
         normal: Int,
         active: Int,
         normalText: Int,
-        activeText: Int
+        activeText: Int,
+        vararg alternateKeyCodes: Int
     ) {
-        val progress = keyProgress[keyCode] ?: if (pressedKeys.contains(keyCode)) 1f else 0f
+        val allKeyCodes = listOf(keyCode) + alternateKeyCodes
+        val progress = allKeyCodes.maxOfOrNull { code ->
+            keyProgress[code] ?: if (pressedKeys.contains(code)) 1f else 0f
+        } ?: 0f
 
         paint.color = lerpColor(normal, active, progress)
 
@@ -272,5 +479,6 @@ class KeyOverlayView(
         const val BASE_WIDTH = 300
         const val BASE_HEIGHT = 420
         private const val ANIMATION_DURATION_MS = 100L
+        private const val CPS_REFRESH_MS = 100L
     }
 }

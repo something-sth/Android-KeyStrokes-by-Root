@@ -107,6 +107,7 @@ class ConfigRepository(context: Context) {
             put("overlayWidth", config.overlayWidth)
             put("overlayHeight", config.overlayHeight)
             put("uiScalePercent", config.uiScalePercent)
+            put("textScalePercent", config.textScalePercent.coerceIn(50, 150))
             put("opacity", config.opacity)
             put("animationEnabled", config.animationEnabled)
             put("keySize", config.keySize.toDouble())
@@ -117,6 +118,11 @@ class ConfigRepository(context: Context) {
             put("pressedTextColor", config.pressedTextColor)
             put("cornerRadiusEnabled", config.cornerRadiusEnabled)
             put("cornerRadius", config.cornerRadius.toDouble())
+            put("shiftKeyEnabled", config.shiftKeyEnabled)
+            put("replaceSpaceDisplay", config.replaceSpaceDisplay)
+            put("mouseButtonsEnabled", config.mouseButtonsEnabled)
+            put("mouseCpsEnabled", config.mouseCpsEnabled)
+            put("mouseCpsMode", config.mouseCpsMode.coerceIn(1, 3))
         }
     }
 
@@ -129,6 +135,7 @@ class ConfigRepository(context: Context) {
             overlayWidth = json.optInt("overlayWidth", 300),
             overlayHeight = json.optInt("overlayHeight", 420),
             uiScalePercent = json.optInt("uiScalePercent", 100).coerceIn(50, 200),
+            textScalePercent = json.optInt("textScalePercent", 100).coerceIn(50, 150),
             opacity = json.optInt("opacity", 70).coerceIn(20, 100),
             animationEnabled = json.optBoolean("animationEnabled", true),
             keySize = json.optDouble("keySize", 80.0).toFloat(),
@@ -138,7 +145,12 @@ class ConfigRepository(context: Context) {
             textColor = json.optLong("textColor", 0xFFFFFFFF),
             pressedTextColor = json.optLong("pressedTextColor", 0xFF000000),
             cornerRadiusEnabled = json.optBoolean("cornerRadiusEnabled", false),
-            cornerRadius = json.optDouble("cornerRadius", 0.0).toFloat().coerceIn(0f, 50f)
+            cornerRadius = json.optDouble("cornerRadius", 0.0).toFloat().coerceIn(0f, 50f),
+            shiftKeyEnabled = json.optBoolean("shiftKeyEnabled", false),
+            replaceSpaceDisplay = json.optBoolean("replaceSpaceDisplay", true),
+            mouseButtonsEnabled = json.optBoolean("mouseButtonsEnabled", true),
+            mouseCpsEnabled = json.optBoolean("mouseCpsEnabled", false),
+            mouseCpsMode = json.optInt("mouseCpsMode", 1).coerceIn(1, 3)
         )
     }
 

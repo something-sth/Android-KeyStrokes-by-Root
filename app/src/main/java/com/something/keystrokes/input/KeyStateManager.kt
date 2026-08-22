@@ -45,6 +45,10 @@ class KeyStateManager {
 
         const val KEY_SPACE = 57
 
+        // Shift 按键
+        const val KEY_LEFT_SHIFT = 42
+        const val KEY_RIGHT_SHIFT = 54
+
         // 鼠标按键
         const val KEY_LMB = 272   // BTN_LEFT
         const val KEY_RMB = 273   // BTN_RIGHT
